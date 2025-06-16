@@ -1,0 +1,33 @@
+# Python
+__pycache__/
+*.py[cod]
+*.env
+*.venv
+env/
+venv/
+*.sqlite3
+*.log
+
+# macOS
+.DS_Store
+
+# Virtual environments
+.env/
+.venv/
+venv/
+ENV/
+env.bak/
+venv.bak/
+
+# VSCode
+.vscode/
+
+# Flask uploads/temp
+instance/
+*.csv
+uploads/
+temp/
+
+# Byte-compiled / cache
+*.pyc
+__pycache__/
