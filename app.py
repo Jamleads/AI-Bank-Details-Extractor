@@ -683,7 +683,7 @@ def extract_bank_details_with_gemini(pdf_base64: str) -> str:
     """
     
     # Configure the API key
-    genai.configure(api_key="AIzaSyA5olfbnJSp8EYF8AK9kq9c1sNMFOvEmHU")
+    genai.configure(api_key="")
     
     # Initialize the model
     model = genai.GenerativeModel('gemini-2.5-flash-preview-05-20')
