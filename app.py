@@ -15,18 +15,18 @@ import tempfile
 from datetime import datetime
 import google.generativeai as genai
 import base64
-from typing import Dict, Any
+from typing import List, Dict, Any
+
 
 app = Flask(__name__)
 app.secret_key = 'your-secret-key-change-this'
 app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024  # 16MB max file size
 
-# Configuration
-GEMINI_API_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-pro:generateContent"
-UPLOAD_FOLDER = 'uploads'
-OUTPUT_FOLDER = 'output'
+# Constants
+UPLOAD_FOLDER = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'uploads')
+OUTPUT_FOLDER = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'output')
 
-# Create necessary directories
+# Create necessary folders
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 os.makedirs(OUTPUT_FOLDER, exist_ok=True)
 
@@ -37,265 +37,624 @@ HTML_TEMPLATE = """
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>PDF Bank Details Extractor</title>
+    <title>Bank Details Extractor</title>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
     <style>
         * {
             margin: 0;
             padding: 0;
             box-sizing: border-box;
         }
-        
+
         body {
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
             min-height: 100vh;
-            display: flex;
-            align-items: center;
-            justify-content: center;
             padding: 20px;
         }
-        
+
         .container {
+            max-width: 800px;
+            margin: 0 auto;
             background: white;
-            padding: 40px;
             border-radius: 15px;
             box-shadow: 0 20px 40px rgba(0,0,0,0.1);
-            max-width: 500px;
-            width: 100%;
+            overflow: hidden;
+        }
+
+        .header {
+            background: linear-gradient(135deg, #2c3e50, #3498db);
+            color: white;
+            padding: 30px;
             text-align: center;
         }
-        
-        h1 {
-            color: #333;
-            margin-bottom: 30px;
-            font-size: 28px;
-            font-weight: 600;
+
+        .header h1 {
+            font-size: 2.5em;
+            margin-bottom: 10px;
+            font-weight: 300;
         }
-        
+
+        .header p {
+            opacity: 0.9;
+            font-size: 1.1em;
+        }
+
+        .main-content {
+            padding: 40px;
+        }
+
         .upload-section {
+            border: 3px dashed #ddd;
+            border-radius: 10px;
+            padding: 40px;
+            text-align: center;
             margin-bottom: 30px;
+            transition: all 0.3s ease;
+            cursor: pointer;
         }
-        
-        .file-input-wrapper {
-            position: relative;
-            display: inline-block;
+
+        .upload-section:hover {
+            border-color: #3498db;
+            background-color: #f8f9fa;
+        }
+
+        .upload-section.dragover {
+            border-color: #2ecc71;
+            background-color: #e8f5e9;
+        }
+
+        .upload-icon {
+            font-size: 4em;
+            color: #bdc3c7;
             margin-bottom: 20px;
         }
-        
+
+        .upload-text {
+            font-size: 1.2em;
+            color: #7f8c8d;
+            margin-bottom: 20px;
+        }
+
         .file-input {
-            opacity: 0;
-            position: absolute;
-            z-index: -1;
+            display: none;
         }
-        
-        .file-input-button {
-            background: #667eea;
+
+        .upload-btn {
+            background: linear-gradient(135deg, #3498db, #2980b9);
             color: white;
-            padding: 12px 24px;
-            border-radius: 8px;
-            cursor: pointer;
+            padding: 12px 30px;
             border: none;
-            font-size: 16px;
-            transition: all 0.3s ease;
-            display: inline-block;
-        }
-        
-        .file-input-button:hover {
-            background: #5a6fd8;
-            transform: translateY(-2px);
-        }
-        
-        .file-name {
-            margin-top: 10px;
-            color: #666;
-            font-style: italic;
-        }
-        
-        .button {
-            background: #28a745;
-            color: white;
-            padding: 12px 24px;
-            border: none;
-            border-radius: 8px;
+            border-radius: 25px;
+            font-size: 1.1em;
             cursor: pointer;
-            font-size: 16px;
-            margin: 5px;
             transition: all 0.3s ease;
-            min-width: 120px;
         }
-        
-        .button:hover {
+
+        .upload-btn:hover {
             transform: translateY(-2px);
-            box-shadow: 0 5px 15px rgba(0,0,0,0.2);
+            box-shadow: 0 5px 15px rgba(52, 152, 219, 0.4);
         }
-        
-        .button:disabled {
-            background: #ccc;
-            cursor: not-allowed;
-            transform: none;
+
+        .status-section {
+            background: #f8f9fa;
+            border-radius: 10px;
+            padding: 25px;
+            margin-bottom: 30px;
         }
-        
-        .button.download {
-            background: #17a2b8;
+
+        .status-title {
+            font-size: 1.3em;
+            font-weight: 600;
+            color: #2c3e50;
+            margin-bottom: 15px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
         }
-        
-        .button.download:hover {
-            background: #138496;
-        }
-        
-        .status {
-            margin: 20px 0;
+
+        .files-display {
+            background: white;
+            border: 1px solid #e9ecef;
+            border-radius: 8px;
             padding: 15px;
-            border-radius: 8px;
+            margin-bottom: 20px;
+        }
+
+        .files-label {
+            font-weight: 600;
+            color: #495057;
+            margin-bottom: 8px;
+            display: block;
+        }
+
+        .files-list {
+            color: #6c757d;
+            font-family: 'Courier New', monospace;
+            font-size: 0.95em;
+            line-height: 1.4;
+        }
+
+        .files-list.has-files {
+            color: #28a745;
             font-weight: 500;
         }
-        
-        .status.processing {
-            background: #fff3cd;
-            color: #856404;
-            border: 1px solid #ffeaa7;
+
+        .progress-info {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 15px;
+            margin-top: 15px;
         }
-        
-        .status.success {
-            background: #d4edda;
-            color: #155724;
+
+        .info-card {
+            background: white;
+            border: 1px solid #e9ecef;
+            border-radius: 8px;
+            padding: 15px;
+            text-align: center;
+        }
+
+        .info-number {
+            font-size: 2em;
+            font-weight: bold;
+            color: #3498db;
+            display: block;
+        }
+
+        .info-label {
+            color: #6c757d;
+            font-size: 0.9em;
+            margin-top: 5px;
+        }
+
+        .results-section {
+            background: #e8f5e9;
             border: 1px solid #c3e6cb;
+            border-radius: 10px;
+            padding: 25px;
+            margin-bottom: 30px;
+            display: none;
         }
-        
-        .status.error {
+
+        .results-section.show {
+            display: block;
+        }
+
+        .results-section.error {
             background: #f8d7da;
+            border-color: #f5c6cb;
+        }
+
+        .results-title {
+            font-size: 1.3em;
+            font-weight: 600;
+            margin-bottom: 15px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .results-title.success {
+            color: #155724;
+        }
+
+        .results-title.error {
             color: #721c24;
-            border: 1px solid #f5c6cb;
         }
-        
+
+        .results-content {
+            color: #155724;
+            line-height: 1.6;
+        }
+
+        .results-content.error {
+            color: #721c24;
+        }
+
+        .download-section {
+            text-align: center;
+            margin-top: 30px;
+        }
+
+        .download-btn {
+            background: linear-gradient(135deg, #27ae60, #2ecc71);
+            color: white;
+            padding: 15px 40px;
+            border: none;
+            border-radius: 25px;
+            font-size: 1.1em;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            display: inline-flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .download-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(39, 174, 96, 0.4);
+        }
+
+        .download-btn:disabled {
+            background: #bdc3c7;
+            cursor: not-allowed;
+            transform: none;
+            box-shadow: none;
+        }
+
+        .clear-btn {
+            background: linear-gradient(135deg, #e74c3c, #c0392b);
+            color: white;
+            padding: 10px 25px;
+            border: none;
+            border-radius: 20px;
+            font-size: 0.9em;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            margin-left: 15px;
+        }
+
+        .clear-btn:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 3px 10px rgba(231, 76, 60, 0.4);
+        }
+
         .loading {
-            display: inline-block;
-            width: 20px;
-            height: 20px;
-            border: 3px solid #f3f3f3;
-            border-top: 3px solid #667eea;
-            border-radius: 50%;
-            animation: spin 1s linear infinite;
-            margin-right: 10px;
+            display: none;
+            text-align: center;
+            padding: 20px;
         }
-        
+
+        .loading.show {
+            display: block;
+        }
+
+        .spinner {
+            border: 4px solid #f3f3f4;
+            border-top: 4px solid #3498db;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 15px;
+        }
+
         @keyframes spin {
             0% { transform: rotate(0deg); }
             100% { transform: rotate(360deg); }
         }
-        
-        .hidden {
-            display: none;
+
+        .fade-in {
+            animation: fadeIn 0.5s ease-in;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(20px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        @media (max-width: 768px) {
+            .container {
+                margin: 10px;
+                border-radius: 10px;
+            }
+            
+            .main-content {
+                padding: 20px;
+            }
+            
+            .progress-info {
+                grid-template-columns: 1fr;
+            }
         }
     </style>
 </head>
 <body>
     <div class="container">
-        <h1>PDF Bank Details Extractor</h1>
-        
-        <div class="upload-section">
-            <form id="uploadForm" enctype="multipart/form-data">
-                <div class="file-input-wrapper">
-                    <input type="file" id="pdfFile" name="pdf_file" accept=".pdf" class="file-input" required>
-                    <label for="pdfFile" class="file-input-button">Choose PDF File</label>
-                </div>
-                <div id="fileName" class="file-name"></div>
-                <br>
-                <button type="submit" class="button" id="processBtn">
-                    Process PDF
-                </button>
-            </form>
+        <div class="header">
+            <h1><i class="fas fa-file-invoice-dollar"></i> Bank Details Extractor</h1>
+            <p>Upload PDF documents to extract banking information automatically</p>
         </div>
-        
-        <div id="status" class="hidden"></div>
-        
-        <div id="downloadSection" class="hidden">
-            <button id="downloadBtn" class="button download">
-                Download CSV
-            </button>
+
+        <div class="main-content">
+            <!-- Upload Section -->
+            <div class="upload-section" id="uploadSection">
+                <div class="upload-icon">
+                    <i class="fas fa-cloud-upload-alt"></i>
+                </div>
+                <div class="upload-text">
+                    Drag & drop your PDF files here, or click to select
+                </div>
+                <input type="file" id="fileInput" class="file-input" accept=".pdf" multiple>
+                <button class="upload-btn" onclick="document.getElementById('fileInput').click()">
+                    <i class="fas fa-folder-open"></i> Choose Files
+                </button>
+            </div>
+
+            <!-- Status Section -->
+            <div class="status-section">
+                <div class="status-title">
+                    <i class="fas fa-info-circle"></i>
+                    Processing Status
+                </div>
+                
+                <div class="files-display">
+                    <span class="files-label">Selected Files:</span>
+                    <div class="files-list" id="filesDisplay">No files selected</div>
+                </div>
+
+                <div class="progress-info">
+                    <div class="info-card">
+                        <span class="info-number" id="totalRecords">0</span>
+                        <div class="info-label">Total Records</div>
+                    </div>
+                    <div class="info-card">
+                        <span class="info-number" id="totalFiles">0</span>
+                        <div class="info-label">Files Processed</div>
+                    </div>
+                </div>
+
+                <div style="margin-top: 15px; text-align: right;">
+                    <button class="clear-btn" onclick="clearSession()">
+                        <i class="fas fa-trash"></i> Clear Session
+                    </button>
+                </div>
+            </div>
+
+            <!-- Loading Section -->
+            <div class="loading" id="loadingSection">
+                <div class="spinner"></div>
+                <p>Processing PDF and extracting bank details...</p>
+            </div>
+
+            <!-- Results Section -->
+            <div class="results-section" id="resultsSection">
+                <div class="results-title" id="resultsTitle">
+                    <i class="fas fa-check-circle"></i>
+                    <span id="resultsTitleText">Processing Complete</span>
+                </div>
+                <div class="results-content" id="resultsContent">
+                    <!-- Results will be displayed here -->
+                </div>
+            </div>
+
+            <!-- Download Section -->
+            <div class="download-section">
+                <button class="download-btn" id="downloadBtn" onclick="downloadCSV()">
+                    <i class="fas fa-download"></i>
+                    Download Combined CSV
+                </button>
+            </div>
         </div>
     </div>
 
     <script>
-        const uploadForm = document.getElementById('uploadForm');
-        const pdfFileInput = document.getElementById('pdfFile');
-        const fileNameDiv = document.getElementById('fileName');
-        const processBtn = document.getElementById('processBtn');
-        const statusDiv = document.getElementById('status');
-        const downloadSection = document.getElementById('downloadSection');
-        const downloadBtn = document.getElementById('downloadBtn');
-        
-        let currentFilename = '';
-        
-        // Handle file selection
-        pdfFileInput.addEventListener('change', function(e) {
-            const file = e.target.files[0];
-            if (file) {
-                fileNameDiv.textContent = `Selected: ${file.name}`;
-                downloadSection.classList.add('hidden');
-                statusDiv.classList.add('hidden');
-            }
+        let processedFiles = [];
+        let totalRecords = 0;
+
+        // Initialize page
+        document.addEventListener('DOMContentLoaded', function() {
+            updateSessionStatus();
+            setupEventListeners();
         });
-        
-        // Handle form submission
-        uploadForm.addEventListener('submit', async function(e) {
-            e.preventDefault();
+
+        function setupEventListeners() {
+            const uploadSection = document.getElementById('uploadSection');
+            const fileInput = document.getElementById('fileInput');
+
+            // Drag and drop functionality
+            uploadSection.addEventListener('dragover', (e) => {
+                e.preventDefault();
+                uploadSection.classList.add('dragover');
+            });
+
+            uploadSection.addEventListener('dragleave', () => {
+                uploadSection.classList.remove('dragover');
+            });
+
+            uploadSection.addEventListener('drop', (e) => {
+                e.preventDefault();
+                uploadSection.classList.remove('dragover');
+                const files = e.dataTransfer.files;
+                handleFiles(files);
+            });
+
+            // File input change
+            fileInput.addEventListener('change', (e) => {
+                handleFiles(e.target.files);
+            });
+
+            // Click to upload
+            uploadSection.addEventListener('click', () => {
+                fileInput.click();
+            });
+        }
+
+        async function handleFiles(files) {
+            const pdfFiles = Array.from(files).filter(file => file.type === 'application/pdf');
             
-            const file = pdfFileInput.files[0];
-            if (!file) {
-                showStatus('Please select a PDF file first.', 'error');
+            if (pdfFiles?.length === 0) {
+                showResults('No PDF files selected. Please select PDF files only.', false);
                 return;
             }
-            
-            if (file.type !== 'application/pdf') {
-                showStatus('Please select a valid PDF file.', 'error');
-                return;
+
+            for (let file of pdfFiles) {
+                await processFile(file);
             }
-            
-            // Show processing status
-            processBtn.disabled = true;
-            processBtn.innerHTML = '<span class="loading"></span>Processing...';
-            showStatus('Uploading and processing PDF with Gemini AI...', 'processing');
-            downloadSection.classList.add('hidden');
-            
-            // Create form data
-            const formData = new FormData();
-            formData.append('pdf_file', file);
-            
+        }
+
+        async function updateSessionStatus() {
             try {
+                const response = await fetch('/get_session_status');
+                const status = await response.json();
+                
+                updateFilesList(status.files_display);
+                updateCounts(status.total_records, status.all_processed_files.length);
+                
+                if (status.all_processed_files.length > 0) {
+                    document.getElementById('downloadBtn').disabled = false;
+                }
+            } catch (error) {
+                console.error('Error updating session status:', error);
+            }
+        }
+
+        function updateFilesList(filesDisplay) {
+            const filesElement = document.getElementById('filesDisplay');
+            filesElement.textContent = filesDisplay;
+            
+            if (filesDisplay !== 'No files selected') {
+                filesElement.classList.add('has-files');
+            } else {
+                filesElement.classList.remove('has-files');
+            }
+        }
+
+        function updateCounts(records, files) {
+            document.getElementById('totalRecords').textContent = records;
+            document.getElementById('totalFiles').textContent = files;
+        }
+
+        async function processFile(file) {
+            showLoading(true);
+            hideResults();
+
+            try {
+                const formData = new FormData();
+                formData.append('pdf_file', file);
+
                 const response = await fetch('/process', {
                     method: 'POST',
                     body: formData
                 });
-                
+
                 const result = await response.json();
                 
                 if (result.success) {
-                    currentFilename = result.filename;
-                    showStatus('PDF processed successfully! Bank details extracted and saved to CSV.', 'success');
-                    downloadSection.classList.remove('hidden');
+                    // Update UI with results
+                    updateFilesList(result.files_display);
+                    updateCounts(result.total_records, result.all_processed_files.length);
+                    
+                    showResults(
+                        `✅ Successfully processed "${file.name}"<br>
+                        📄 ${result.records_added} new records added<br>
+                        📊 Total records in database: ${result.total_records}<br>
+                        💾 Data has been added to existing CSV records`, 
+                        true
+                    );
+                    
+                    // Enable download button if we have records
+                    if (result.enable_download) {
+                        document.getElementById('downloadBtn').disabled = false;
+                    }
                 } else {
-                    showStatus(`Error: ${result.error}`, 'error');
+                    showResults(`❌ Error processing "${file.name}": ${result.error}`, false);
                 }
             } catch (error) {
-                showStatus(`Network error: ${error.message}`, 'error');
+                showResults(`❌ Upload failed: ${error.message}`, false);
             } finally {
-                processBtn.disabled = false;
-                processBtn.innerHTML = 'Process PDF';
+                showLoading(false);
             }
-        });
-        
-        // Handle download
-        downloadBtn.addEventListener('click', function() {
-            if (currentFilename) {
-                window.location.href = `/download/${currentFilename}`;
+        }
+
+        function showLoading(show) {
+            const loadingSection = document.getElementById('loadingSection');
+            if (show) {
+                loadingSection.classList.add('show');
+            } else {
+                loadingSection.classList.remove('show');
             }
-        });
-        
-        function showStatus(message, type) {
-            statusDiv.textContent = message;
-            statusDiv.className = `status ${type}`;
-            statusDiv.classList.remove('hidden');
+        }
+
+        function showResults(message, isSuccess) {
+            const resultsSection = document.getElementById('resultsSection');
+            const resultsTitle = document.getElementById('resultsTitle');
+            const resultsTitleText = document.getElementById('resultsTitleText');
+            const resultsContent = document.getElementById('resultsContent');
+
+            // Set content
+            resultsContent.innerHTML = message;
+            
+            // Set styling based on success/error
+            if (isSuccess) {
+                resultsSection.classList.remove('error');
+                resultsTitle.classList.remove('error');
+                resultsTitle.classList.add('success');
+                resultsContent.classList.remove('error');
+                resultsTitle.innerHTML = '<i class="fas fa-check-circle"></i><span>Processing Complete</span>';
+            } else {
+                resultsSection.classList.add('error');
+                resultsTitle.classList.remove('success');
+                resultsTitle.classList.add('error');
+                resultsContent.classList.add('error');
+                resultsTitle.innerHTML = '<i class="fas fa-exclamation-circle"></i><span>Processing Error</span>';
+            }
+
+            // Show with animation
+            resultsSection.classList.add('show', 'fade-in');
+        }
+
+        function hideResults() {
+            const resultsSection = document.getElementById('resultsSection');
+            resultsSection.classList.remove('show');
+        }
+
+        async function clearSession() {
+            if (confirm('Are you sure you want to clear the current session? This will not delete the CSV file.')) {
+                try {
+                    const response = await fetch('/clear_session', {
+                        method: 'POST'
+                    });
+                    
+                    if (response.ok) {
+                        // Reset UI
+                        updateFilesList('No files selected');
+                        hideResults();
+                        
+                        // Keep the total files count from CSV but reset session files
+                        await updateSessionStatus();
+                        
+                        showResults('✅ Session cleared successfully. CSV file remains intact.', true);
+                    }
+                } catch (error) {
+                    showResults('❌ Error clearing session: ' + error.message, false);
+                }
+            }
+        }
+
+        function downloadCSV() {
+            // Use the combined CSV filename
+            const filename = 'combined_bank_details.csv';
+            
+            // Show loading state
+            showLoading(true);
+            
+            // Try to download the file
+            fetch(`/download/${filename}`)
+                .then(response => {
+                    if (!response.ok) {
+                        throw new Error(response.statusText);
+                    }
+                    return response.blob();
+                })
+                .then(blob => {
+                    // Create a download link
+                    const url = window.URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = filename;
+                    document.body.appendChild(a);
+                    a.click();
+                    window.URL.revokeObjectURL(url);
+                    document.body.removeChild(a);
+                })
+                .catch(error => {
+                    showResults('❌ Error downloading file: ' + error.message, false);
+                })
+                .finally(() => {
+                    showLoading(false);
+                });
         }
     </script>
 </body>
@@ -324,7 +683,7 @@ def extract_bank_details_with_gemini(pdf_base64: str) -> str:
     """
     
     # Configure the API key
-    genai.configure(api_key="1111111111111qqqqqqqqqqqqsssssssssffffrrr")
+    genai.configure(api_key="AIzaSyA5olfbnJSp8EYF8AK9kq9c1sNMFOvEmHU")
     
     # Initialize the model
     model = genai.GenerativeModel('gemini-2.5-flash-preview-05-20')
@@ -420,46 +779,202 @@ def parse_gemini_response(response_text):
         # Fallback: return empty list if JSON parsing fails
         return []
 
-def save_to_csv(bank_details, filename):
-    """Save extracted bank details to CSV file"""
-    csv_path = os.path.join(OUTPUT_FOLDER, filename)
-    
+def save_to_csv(bank_details: str, source_pdf: str = None) -> Dict[str, Any]:
+    """
+    Save bank details to combined CSV file, appending to existing file or creating new one with headers.
+    """
     # Define CSV headers
     headers = [
-        'Account Number', 'Account Name', 'Bank Name', 'Sort Code', 
-        'IBAN', 'Swift Code', 'Routing Number', 'BSB Code', 
-        'Branch Code', 'Branch Address', 'Account Type', 
-        'Currency', 'Balance', 'Other Details'
+        'source_pdf',
+        'extraction_date',
+        'account_number',
+        'account_name',
+        'bank_name',
+        'sort_code',
+        'iban',
+        'swift_code',
+        'routing_number',
+        'bsb_code',
+        'branch_code',
+        'branch_address',
+        'account_type',
+        'currency',
+        'balance',
+        'other_details'
     ]
     
-    with open(csv_path, 'w', newline='', encoding='utf-8') as csvfile:
-        writer = csv.writer(csvfile)
-        writer.writerow(headers)
+    try:
+        # Parse the JSON bank details
+        data = json.loads(bank_details)
+        bank_records = data.get('bank_details', [])
         
-        if bank_details:
-            for detail in bank_details:
-                row = [
-                    detail.get('account_number', ''),
-                    detail.get('account_name', ''),
-                    detail.get('bank_name', ''),
-                    detail.get('sort_code', ''),
-                    detail.get('iban', ''),
-                    detail.get('swift_code', ''),
-                    detail.get('routing_number', ''),
-                    detail.get('bsb_code', ''),
-                    detail.get('branch_code', ''),
-                    detail.get('branch_address', ''),
-                    detail.get('account_type', ''),
-                    detail.get('currency', ''),
-                    detail.get('balance', ''),
-                    detail.get('other_details', '')
-                ]
+        if not bank_records:
+            return {
+                'success': False,
+                'error': "No bank details found in the response",
+                'records_added': 0,
+                'total_records': 0
+            }
+        
+        # Get the combined CSV path
+        session_manager = PDFSessionManager()
+        csv_path = session_manager.combined_csv
+        
+        # Ensure the output directory exists
+        os.makedirs(os.path.dirname(csv_path), exist_ok=True)
+        
+        print(f"Saving CSV to: {csv_path}")  # Debug log
+        
+        # Check if file exists
+        file_exists = os.path.exists(csv_path)
+        
+        # Determine write mode
+        mode = 'a' if file_exists else 'w'
+        
+        records_added = 0
+        with open(csv_path, mode, newline='', encoding='utf-8') as csvfile:
+            writer = csv.DictWriter(csvfile, fieldnames=headers)
+            
+            # Write headers only if file is new
+            if not file_exists:
+                writer.writeheader()
+            
+            # Write records
+            for record in bank_records:
+                row = {
+                    'source_pdf': source_pdf or 'Unknown',
+                    'extraction_date': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+                    'account_number': record.get('account_number'),
+                    'account_name': record.get('account_name'),
+                    'bank_name': record.get('bank_name'),
+                    'sort_code': record.get('sort_code'),
+                    'iban': record.get('iban'),
+                    'swift_code': record.get('swift_code'),
+                    'routing_number': record.get('routing_number'),
+                    'bsb_code': record.get('bsb_code'),
+                    'branch_code': record.get('branch_code'),
+                    'branch_address': record.get('branch_address'),
+                    'account_type': record.get('account_type'),
+                    'currency': record.get('currency'),
+                    'balance': record.get('balance'),
+                    'other_details': record.get('other_details')
+                }
                 writer.writerow(row)
-        else:
-            # Write empty row if no data found
-            writer.writerow([''] * len(headers))
+                records_added += 1
+        
+        print(f"Successfully wrote {records_added} records to CSV")  # Debug log
+        
+        # Count total records
+        total_records = 0
+        if os.path.exists(csv_path):
+            with open(csv_path, 'r', encoding='utf-8') as csvfile:
+                reader = csv.reader(csvfile)
+                total_records = sum(1 for row in reader) - 1  # Subtract header row
+        
+        return {
+            'success': True,
+            'file_existed': file_exists,
+            'records_added': records_added,
+            'total_records': total_records,
+            'filename': os.path.basename(csv_path),
+            'message': f"{'Appended' if file_exists else 'Created'} {records_added} records to combined CSV"
+        }
+        
+    except Exception as e:
+        print(f"Error saving to CSV: {str(e)}")  # Debug log
+        return {
+            'success': False,
+            'error': f"Error saving to CSV: {str(e)}",
+            'records_added': 0,
+            'total_records': 0
+        }
+
+
+def get_processed_files_list(filename: str) -> List[str]:
+    """
+    Get list of unique PDF files that have been processed and saved to CSV.
     
-    return csv_path
+    Args:
+        filename (str): CSV filename to read from
+        
+    Returns:
+        List of unique PDF filenames
+    """
+    processed_files = set()
+    
+    if not os.path.exists(filename):
+        return []
+    
+    try:
+        with open(filename, 'r', encoding='utf-8') as csvfile:
+            reader = csv.DictReader(csvfile)
+            for row in reader:
+                pdf_name = row.get('source_pdf', '').strip()
+                if pdf_name and pdf_name != 'Unknown':
+                    processed_files.add(pdf_name)
+    except Exception as e:
+        print(f"Error reading processed files: {e}")
+        return []
+    
+    return sorted(list(processed_files))
+
+
+class PDFSessionManager:
+    """Manages PDF upload session data"""
+    
+    _instance = None
+    
+    def __new__(cls):
+        if cls._instance is None:
+            cls._instance = super(PDFSessionManager, cls).__new__(cls)
+            cls._instance._initialized = False
+        return cls._instance
+    
+    def __init__(self):
+        if self._initialized:
+            return
+            
+        self.uploaded_files = []
+        self.combined_csv = os.path.join(OUTPUT_FOLDER, "combined_bank_details.csv")
+        self.enable_download = False
+        # Ensure output folder exists
+        os.makedirs(OUTPUT_FOLDER, exist_ok=True)
+        self._initialized = True
+    
+    def add_file(self, filename: str):
+        """Add a file to the session if not already present"""
+        if filename not in self.uploaded_files:
+            self.uploaded_files.append(filename)
+    
+    def get_files_list(self) -> List[str]:
+        """Get list of files in current session"""
+        return self.uploaded_files.copy()
+    
+    def get_files_display(self) -> str:
+        """Get formatted string of files for display"""
+        if not self.uploaded_files:
+            return "No files selected"
+        return ", ".join(self.uploaded_files)
+    
+    def clear_session(self):
+        """Clear the current session"""
+        self.uploaded_files.clear()
+    
+    def get_total_processed_files(self) -> List[str]:
+        """Get all files that have been processed (from CSV)"""
+        return get_processed_files_list(self.combined_csv)
+    
+    def get_total_records(self) -> int:
+        """Get total number of records in the combined CSV"""
+        if not os.path.exists(self.combined_csv):
+            return 0
+        try:
+            with open(self.combined_csv, 'r', encoding='utf-8') as csvfile:
+                reader = csv.reader(csvfile)
+                return sum(1 for row in reader) - 1  # Subtract header row
+        except Exception:
+            return 0
+
 
 @app.route('/')
 def index():
@@ -468,72 +983,79 @@ def index():
 
 @app.route('/process', methods=['POST'])
 def process_pdf():
-    """Process uploaded PDF file"""
+    """Process uploaded PDF file and extract bank details"""
     try:
         if 'pdf_file' not in request.files:
-            return jsonify({'success': False, 'error': 'No file uploaded'})
-        
+            return jsonify({'success': False, 'error': 'No file uploaded'}), 400
+            
         file = request.files['pdf_file']
         if file.filename == '':
-            return jsonify({'success': False, 'error': 'No file selected'})
-        
+            return jsonify({'success': False, 'error': 'No file selected'}), 400
+            
         if not file.filename.lower().endswith('.pdf'):
-            return jsonify({'success': False, 'error': 'Please upload a PDF file'})
-        
-        # Save uploaded file
+            return jsonify({'success': False, 'error': 'Only PDF files are allowed'}), 400
+            
+        # Save the uploaded file
         filename = secure_filename(file.filename)
-        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-        safe_filename = f"{timestamp}_{filename}"
-        file_path = os.path.join(UPLOAD_FOLDER, safe_filename)
+        file_path = os.path.join(UPLOAD_FOLDER, filename)
         file.save(file_path)
         
-        try:
-            # Convert PDF to base64
-            pdf_base64 = encode_pdf_to_base64(file_path)
-            
-            # Process with Gemini AI
-            gemini_response = extract_bank_details_with_gemini(pdf_base64)
-            
-            # Parse the response
-            bank_details = parse_gemini_response(gemini_response)
-            
-            # Generate CSV filename
-            csv_filename = f"bank_details_{timestamp}.csv"
-            
-            # Save to CSV
-            csv_path = save_to_csv(bank_details, csv_filename)
-            
-            # Clean up uploaded PDF
-            os.remove(file_path)
-            
-            return jsonify({
-                'success': True, 
-                'filename': csv_filename,
-                'records_found': len(bank_details)
-            })
-            
-        except Exception as e:
-            # Clean up uploaded file on error
-            if os.path.exists(file_path):
-                os.remove(file_path)
-            return jsonify({'success': False, 'error': str(e)})
-            
+        # Process the PDF
+        pdf_base64 = encode_pdf_to_base64(file_path)
+        response_text = extract_bank_details_with_gemini(pdf_base64)
+        bank_details = parse_gemini_response(response_text)
+        
+        # Save to combined CSV
+        result = save_to_csv(bank_details, filename)
+        
+        # Update session
+        session_manager = PDFSessionManager()
+        session_manager.add_file(filename)
+        
+        # Get updated counts
+        total_records = session_manager.get_total_records()
+        processed_files = session_manager.get_total_processed_files()
+        
+        # Enable download button if we have records
+        if total_records > 0:
+            session_manager.enable_download = True
+        
+        return jsonify({
+            'success': True,
+            'records_added': result.get('records_added', 0),
+            'total_records': total_records,
+            'files_display': session_manager.get_files_display(),
+            'all_processed_files': processed_files,
+            'enable_download': session_manager.enable_download
+        })
+        
     except Exception as e:
-        return jsonify({'success': False, 'error': f'Server error: {str(e)}'})
+        return jsonify({'success': False, 'error': str(e)}), 500
 
 @app.route('/download/<filename>')
 def download_csv(filename):
-    """Download the generated CSV file"""
+    """Download the CSV file"""
     try:
-        # Security check: ensure filename doesn't contain path traversal
-        secure_name = secure_filename(filename)
-        if secure_name != filename:
-            return "Invalid filename", 400
+        # Verify file extension
+        if not filename.endswith('.csv'):
+            return "Invalid file format. Only CSV files are allowed.", 400
+            
+        # Get the absolute path to the output folder
+        output_folder = os.path.abspath(OUTPUT_FOLDER)
+        file_path = os.path.join(output_folder, filename)
         
-        file_path = os.path.join(OUTPUT_FOLDER, filename)
+        print(f"Attempting to download file from: {file_path}")  # Debug log
+        
+        # Check if file exists
         if not os.path.exists(file_path):
-            return "File not found", 404
-        
+            print(f"File not found at path: {file_path}")  # Debug log
+            return "File not found.", 404
+            
+        # Check if file is empty
+        if os.path.getsize(file_path) == 0:
+            return "The CSV file is empty. Please process some PDFs first.", 400
+            
+        # Send the file
         return send_file(
             file_path,
             as_attachment=True,
@@ -541,7 +1063,47 @@ def download_csv(filename):
             mimetype='text/csv'
         )
     except Exception as e:
+        print(f"Download error: {str(e)}")  # Debug log
         return f"Download error: {str(e)}", 500
+
+@app.route('/get_session_status')
+def get_session_status():
+    """Get the current session status including processed files"""
+    try:
+        session_manager = PDFSessionManager()
+        total_records = session_manager.get_total_records()
+        processed_files = session_manager.get_total_processed_files()
+        
+        return jsonify({
+            'files_display': session_manager.get_files_display(),
+            'all_processed_files': processed_files,
+            'total_records': total_records
+        })
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/clear_session', methods=['POST'])
+def clear_session():
+    """Clear the current session"""
+    try:
+        session_manager = PDFSessionManager()
+        session_manager.clear_session()
+        return jsonify({'success': True})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/check_file/<filename>')
+def check_file(filename):
+    """Check if a file exists"""
+    try:
+        if not filename.endswith('.csv'):
+            return jsonify({'exists': False, 'error': 'Invalid file format'}), 400
+            
+        file_path = os.path.join(OUTPUT_FOLDER, filename)
+        exists = os.path.exists(file_path)
+        return jsonify({'exists': exists})
+    except Exception as e:
+        return jsonify({'exists': False, 'error': str(e)}), 500
 
 if __name__ == '__main__':
     print("Starting PDF Bank Details Extractor...")
