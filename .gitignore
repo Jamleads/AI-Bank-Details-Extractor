@@ -31,3 +31,6 @@ temp/
 # Byte-compiled / cache
 *.pyc
 __pycache__/
+
+output/
+uploads/

@@ -364,10 +364,10 @@ HTML_TEMPLATE = """
                     <i class="fas fa-cloud-upload-alt"></i>
                 </div>
                 <div class="upload-text">
-                    Drag & drop your PDF files here, or click to select
+                    Drag & drop your PDF files here
                 </div>
                 <input type="file" id="fileInput" class="file-input" accept=".pdf" multiple>
-                <button class="upload-btn" onclick="document.getElementById('fileInput').click()">
+                <button type="button" id="chooseFilesBtn" class="upload-btn">
                     <i class="fas fa-folder-open"></i> Choose Files
                 </button>
             </div>
@@ -435,13 +435,22 @@ HTML_TEMPLATE = """
 
         // Initialize page
         document.addEventListener('DOMContentLoaded', function() {
-            updateSessionStatus();
-            setupEventListeners();
+            console.log("DOM content loaded, initializing page");
+            
+            // First update session status to get pre-populated files
+            updateSessionStatus().then(() => {
+                console.log("Session status updated with pre-populated files");
+                setupEventListeners();
+                console.log("Event listeners set up");
+            });
         });
 
         function setupEventListeners() {
             const uploadSection = document.getElementById('uploadSection');
             const fileInput = document.getElementById('fileInput');
+            const chooseFilesBtn = document.getElementById('chooseFilesBtn');
+            
+            console.log("Setting up event listeners for upload section");
 
             // Drag and drop functionality
             uploadSection.addEventListener('dragover', (e) => {
@@ -465,38 +474,61 @@ HTML_TEMPLATE = """
                 handleFiles(e.target.files);
             });
 
-            // Click to upload
-            uploadSection.addEventListener('click', () => {
+            // Choose files button click - separate from the upload section click
+            chooseFilesBtn.addEventListener('click', (e) => {
+                e.stopPropagation(); // Prevent event from bubbling up to the upload section
                 fileInput.click();
             });
+            
+            // Remove the click handler from the upload section itself
         }
 
         async function handleFiles(files) {
-            const pdfFiles = Array.from(files).filter(file => file.type === 'application/pdf');
+            console.log("handleFiles called with", files.length, "files");
             
-            if (pdfFiles?.length === 0) {
+            if (!files || files.length === 0) {
+                console.log("No files selected");
+                return;
+            }
+            
+            // Filter for PDF files
+            const pdfFiles = Array.from(files).filter(file => {
+                console.log("File:", file.name, "Type:", file.type);
+                // Check both MIME type and extension for PDF
+                return file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf');
+            });
+            
+            console.log("Filtered PDF files:", pdfFiles.length);
+            
+            if (pdfFiles.length === 0) {
                 showResults('No PDF files selected. Please select PDF files only.', false);
                 return;
             }
 
             for (let file of pdfFiles) {
+                console.log("Processing PDF file:", file.name);
                 await processFile(file);
             }
         }
 
         async function updateSessionStatus() {
             try {
+                console.log("Fetching session status...");
                 const response = await fetch('/get_session_status');
                 const status = await response.json();
                 
+                console.log("Session status:", status);
                 updateFilesList(status.files_display);
                 updateCounts(status.total_records, status.all_processed_files.length);
                 
                 if (status.all_processed_files.length > 0) {
                     document.getElementById('downloadBtn').disabled = false;
                 }
+                
+                return status;
             } catch (error) {
                 console.error('Error updating session status:', error);
+                return null;
             }
         }
 
@@ -517,19 +549,32 @@ HTML_TEMPLATE = """
         }
 
         async function processFile(file) {
+            console.log("Processing file:", file.name);
             showLoading(true);
             hideResults();
 
             try {
+                // Create FormData and append the file
                 const formData = new FormData();
                 formData.append('pdf_file', file);
+                console.log("Sending request to /process endpoint with file:", file.name);
 
+                // Send the request
                 const response = await fetch('/process', {
                     method: 'POST',
                     body: formData
                 });
 
+                console.log("Response received:", response.status);
+                
+                // Check if response is ok
+                if (!response.ok) {
+                    throw new Error(`Server responded with status: ${response.status}`);
+                }
+                
+                // Parse the response
                 const result = await response.json();
+                console.log("Response data:", result);
                 
                 if (result.success) {
                     // Update UI with results
@@ -549,9 +594,11 @@ HTML_TEMPLATE = """
                         document.getElementById('downloadBtn').disabled = false;
                     }
                 } else {
+                    console.error("Error in response:", result.error);
                     showResults(`❌ Error processing "${file.name}": ${result.error}`, false);
                 }
             } catch (error) {
+                console.error("Upload failed:", error);
                 showResults(`❌ Upload failed: ${error.message}`, false);
             } finally {
                 showLoading(false);
@@ -661,10 +708,15 @@ HTML_TEMPLATE = """
 </html>
 """
 
-def encode_pdf_to_base64(file_path):
-    """Convert PDF file to base64 for Gemini API"""
-    with open(file_path, 'rb') as pdf_file:
-        return base64.b64encode(pdf_file.read()).decode('utf-8')
+def encode_pdf_to_base64(file_data):
+    """Convert PDF file or data to base64 for Gemini API"""
+    if isinstance(file_data, str):
+        # If it's a file path
+        with open(file_data, 'rb') as pdf_file:
+            return base64.b64encode(pdf_file.read()).decode('utf-8')
+    else:
+        # If it's already bytes
+        return base64.b64encode(file_data).decode('utf-8')
 
 
 def extract_bank_details_with_gemini(pdf_base64: str) -> str:
@@ -937,9 +989,30 @@ class PDFSessionManager:
         self.uploaded_files = []
         self.combined_csv = os.path.join(OUTPUT_FOLDER, "combined_bank_details.csv")
         self.enable_download = False
+        
         # Ensure output folder exists
         os.makedirs(OUTPUT_FOLDER, exist_ok=True)
+        
+        # Pre-populate with files from CSV
+        self._load_files_from_csv()
+        
         self._initialized = True
+    
+    def _load_files_from_csv(self):
+        """Load source_pdf values from CSV file to populate the files list"""
+        if os.path.exists(self.combined_csv):
+            try:
+                processed_files = get_processed_files_list(self.combined_csv)
+                for filename in processed_files:
+                    self.add_file(filename)
+                
+                # Enable download if we have records
+                if len(processed_files) > 0:
+                    self.enable_download = True
+                    
+                print(f"Pre-populated {len(processed_files)} files from CSV")
+            except Exception as e:
+                print(f"Error loading files from CSV: {str(e)}")
     
     def add_file(self, filename: str):
         """Add a file to the session if not already present"""
@@ -985,30 +1058,46 @@ def index():
 def process_pdf():
     """Process uploaded PDF file and extract bank details"""
     try:
+        print("Received /process request")
+        
         if 'pdf_file' not in request.files:
+            print("No pdf_file in request.files")
             return jsonify({'success': False, 'error': 'No file uploaded'}), 400
             
         file = request.files['pdf_file']
         if file.filename == '':
+            print("Empty filename")
             return jsonify({'success': False, 'error': 'No file selected'}), 400
             
         if not file.filename.lower().endswith('.pdf'):
+            print(f"Invalid file type: {file.filename}")
             return jsonify({'success': False, 'error': 'Only PDF files are allowed'}), 400
             
-        # Save the uploaded file
+        # Get the filename but don't save to disk
         filename = secure_filename(file.filename)
-        file_path = os.path.join(UPLOAD_FOLDER, filename)
-        file.save(file_path)
+        print(f"Processing file: {filename}")
         
-        # Process the PDF
-        pdf_base64 = encode_pdf_to_base64(file_path)
+        # Read file content directly into memory
+        file_content = file.read()
+        
+        # Convert to base64 directly from memory
+        pdf_base64 = base64.b64encode(file_content).decode('utf-8')
+        
+        print("Extracting bank details with Gemini")
         response_text = extract_bank_details_with_gemini(pdf_base64)
+        
+        print("Parsing Gemini response")
         bank_details = parse_gemini_response(response_text)
         
+        # Convert bank_details list back to JSON format expected by save_to_csv
+        bank_details_json = json.dumps({"bank_details": bank_details})
+        
         # Save to combined CSV
-        result = save_to_csv(bank_details, filename)
+        print("Saving to CSV")
+        result = save_to_csv(bank_details_json, filename)
         
         # Update session
+        print("Updating session")
         session_manager = PDFSessionManager()
         session_manager.add_file(filename)
         
@@ -1020,6 +1109,7 @@ def process_pdf():
         if total_records > 0:
             session_manager.enable_download = True
         
+        print(f"Processing complete: {result}")
         return jsonify({
             'success': True,
             'records_added': result.get('records_added', 0),
@@ -1030,6 +1120,9 @@ def process_pdf():
         })
         
     except Exception as e:
+        print(f"Error in /process: {str(e)}")
+        import traceback
+        traceback.print_exc()
         return jsonify({'success': False, 'error': str(e)}), 500
 
 @app.route('/download/<filename>')
@@ -1074,12 +1167,21 @@ def get_session_status():
         total_records = session_manager.get_total_records()
         processed_files = session_manager.get_total_processed_files()
         
+        # Get the list of files in the current session
+        session_files = session_manager.get_files_list()
+        
         return jsonify({
             'files_display': session_manager.get_files_display(),
             'all_processed_files': processed_files,
-            'total_records': total_records
+            'session_files': session_files,
+            'total_records': total_records,
+            'enable_download': session_manager.enable_download,
+            'has_files': len(session_files) > 0
         })
     except Exception as e:
+        print(f"Error in get_session_status: {str(e)}")
+        import traceback
+        traceback.print_exc()
         return jsonify({'error': str(e)}), 500
 
 @app.route('/clear_session', methods=['POST'])
