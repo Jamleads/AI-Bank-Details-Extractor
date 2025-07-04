@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Login - Bank Details Extractor</title>
+    <link rel="stylesheet" href="{{ url_for('static', path='css/style.css') }}">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
+</head>
+
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>Bank Details Extractor</h1>
+            <p>Extract bank details from PDF documents</p>
+        </div>
+
+        <div class="login-screen">
+            <div class="login-container fade-in">
+                <h2>Welcome</h2>
+                <p>Please sign in to continue</p>
+                <a href="/auth/google/login" class="google-login-btn">
+                    <i class="fab fa-google"></i>
+                    Sign in with Google
+                </a>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', function () {
+            // Any login page specific JavaScript can go here
+        });
+    </script>
+</body>
+
+</html>

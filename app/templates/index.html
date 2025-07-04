@@ -1,0 +1,91 @@
+{% extends "base.html" %}
+
+{% block title %}Bank Details Extractor{% endblock %}
+
+{% block content %}
+<!-- Upload Section -->
+<div class="upload-section" id="uploadSection">
+    <div class="upload-icon">
+        <i class="fas fa-cloud-upload-alt"></i>
+    </div>
+    <div class="upload-text">
+        Drag & drop your PDF files here
+    </div>
+    <input type="file" id="fileInput" class="file-input" accept=".pdf" multiple>
+    <button type="button" id="chooseFilesBtn" class="upload-btn">
+        <i class="fas fa-folder-open"></i> Choose Files
+    </button>
+</div>
+
+<!-- Status Section -->
+<div class="status-section">
+    <div class="status-title">
+        <i class="fas fa-info-circle"></i>
+        Processing Status
+    </div>
+
+    <div class="files-display">
+        <span class="files-label">Selected Files:</span>
+        <div class="files-list" id="filesDisplay">No files selected</div>
+    </div>
+
+    <div class="progress-info">
+        <div class="info-card">
+            <span class="info-number" id="totalRecords">0</span>
+            <div class="info-label">Bank Details Extracted</div>
+        </div>
+        <div class="info-card">
+            <span class="info-number" id="totalFiles">0</span>
+            <div class="info-label">PDF Files Processed</div>
+        </div>
+    </div>
+
+    <div style="margin-top: 15px; text-align: right;">
+        <button class="clear-btn" id="clearSessionBtn">
+            <i class="fas fa-trash"></i> Clear Session
+        </button>
+    </div>
+</div>
+
+<!-- Loading Section -->
+<div class="loading" id="loadingSection">
+    <div class="spinner"></div>
+    <p>Processing PDF and extracting bank details...</p>
+</div>
+
+<!-- Results Section -->
+<div class="results-section" id="resultsSection">
+    <div class="results-title" id="resultsTitle">
+        <i class="fas fa-check-circle"></i>
+        <span id="resultsTitleText">Processing Complete</span>
+    </div>
+    <div class="results-content" id="resultsContent">
+        <!-- Results will be displayed here -->
+    </div>
+</div>
+
+<!-- Download Section -->
+<div class="download-section">
+    <a href="/api/download-csv" class="download-btn" id="downloadBtn">
+        <i class="fas fa-download"></i>
+        Download Combined CSV
+    </a>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    // Override the downloadCSV function to use a direct link
+    document.getElementById('downloadBtn').addEventListener('click', function (e) {
+        if (this.classList.contains('disabled')) {
+            e.preventDefault();
+        }
+    });
+
+    // Add event listener for clear session button
+    document.getElementById('clearSessionBtn').addEventListener('click', function (e) {
+        e.preventDefault();
+        clearSession();
+    });
+</script>
+{% endblock %}
