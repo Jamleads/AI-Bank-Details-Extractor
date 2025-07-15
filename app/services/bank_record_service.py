@@ -8,7 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 from sqlalchemy import delete
 
-from app.db.models import BankRecord, User
+from app.db.models import BankRecord, User, RawExtraction
 from app.models.bank_details import BankDetail, CSVRecord
 
 
@@ -183,12 +183,93 @@ async def clear_user_session(user_id: int, db: AsyncSession) -> bool:
         Success status
     """
     try:
+        # Delete bank records
         await db.execute(
             delete(BankRecord)
             .where(BankRecord.user_id == user_id)
         )
+        
+        # Delete raw extractions
+        await db.execute(
+            delete(RawExtraction)
+            .where(RawExtraction.user_id == user_id)
+        )
+        
         await db.commit()
         return True
     except Exception:
         await db.rollback()
-        return False 
+        return False
+
+
+async def save_raw_extraction(
+    raw_data: Dict[str, Any],
+    source_pdf: str,
+    user_id: int,
+    db: AsyncSession
+) -> Dict[str, Any]:
+    """
+    Save raw extraction data to database
+    
+    Args:
+        raw_data: Raw JSON data from Gemini
+        source_pdf: Source PDF filename
+        user_id: User ID
+        db: Database session
+        
+    Returns:
+        Dictionary with operation results
+    """
+    try:
+        # Create raw extraction record
+        raw_extraction = RawExtraction(
+            user_id=user_id,
+            source_pdf=source_pdf,
+            extraction_date=datetime.now(),
+            raw_data=raw_data
+        )
+        
+        # Add to database
+        db.add(raw_extraction)
+        await db.commit()
+        
+        return {
+            'success': True,
+            'message': "Raw extraction data saved successfully"
+        }
+        
+    except Exception as e:
+        await db.rollback()
+        return {
+            'success': False,
+            'error': f"Error saving raw extraction data: {str(e)}"
+        }
+
+
+async def get_raw_extractions(user_id: int, db: AsyncSession) -> List[Dict[str, Any]]:
+    """
+    Get raw extractions for a user
+    
+    Args:
+        user_id: User ID
+        db: Database session
+        
+    Returns:
+        List of raw extractions
+    """
+    # Query raw extractions
+    query = select(RawExtraction).where(RawExtraction.user_id == user_id)
+    result = await db.execute(query)
+    raw_extractions = result.scalars().all()
+    
+    # Convert to dict
+    extractions = []
+    for extraction in raw_extractions:
+        extractions.append({
+            'id': extraction.id,
+            'source_pdf': extraction.source_pdf,
+            'extraction_date': extraction.extraction_date,
+            'raw_data': extraction.raw_data
+        })
+    
+    return extractions 

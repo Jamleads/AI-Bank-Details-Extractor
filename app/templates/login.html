@@ -1,38 +1,166 @@
-<!DOCTYPE html>
-<html lang="en">
+{% extends "base.html" %}
 
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Login - Bank Details Extractor</title>
-    <link rel="stylesheet" href="{{ url_for('static', path='css/style.css') }}">
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
-</head>
+{% block title %}Login - Bank Details Extractor{% endblock %}
 
-<body>
-    <div class="container">
-        <div class="header">
-            <h1>Bank Details Extractor</h1>
-            <p>Extract bank details from PDF documents</p>
+{% block extra_js %}
+<script>
+    // Check for token in headers (after redirect from OAuth)
+    document.addEventListener('DOMContentLoaded', function () {
+        // Get token from URL params (for backward compatibility)
+        const urlParams = new URLSearchParams(window.location.search);
+        const tokenFromUrl = urlParams.get('token');
+
+        if (tokenFromUrl) {
+            localStorage.setItem('auth_token', tokenFromUrl);
+            // Clean up URL
+            window.history.replaceState({}, document.title, window.location.pathname);
+            // Redirect to home
+            window.location.href = '/';
+            return;
+        }
+    });
+
+    // Prevent redirect loop on login page
+    if (localStorage.getItem('auth_token')) {
+        // If we have a token, try to verify it
+        fetch('/auth/me', {
+            headers: {
+                'Authorization': `Bearer ${localStorage.getItem('auth_token')}`
+            }
+        })
+            .then(response => {
+                if (response.ok) {
+                    // If token is valid, redirect to home
+                    window.location.href = '/';
+                } else {
+                    // If token is invalid, clear it
+                    localStorage.removeItem('auth_token');
+                }
+            })
+            .catch(error => {
+                console.error('Error checking auth:', error);
+                localStorage.removeItem('auth_token');
+            });
+    }
+</script>
+{% endblock %}
+
+{% block content %}
+<div class="landing-page">
+    <div class="hero-section">
+        <div class="app-name">bankdetails2csv</div>
+        <h1>Convert Your Invoices to CSV in Seconds</h1>
+        <p class="subtitle">AI-powered parsing · Multi-format · Multi-language · No files stored</p>
+        <a href="/auth/google/login" class="google-login-btn">
+            <i class="fab fa-google"></i> Sign in with Google
+        </a>
+    </div>
+
+    <div class="features-section">
+        <div class="feature">
+            <div class="feature-icon">
+                <i class="fas fa-file-upload"></i>
+            </div>
+            <h3>Multi-format upload</h3>
+            <p>PNG, PDF, ZIP</p>
         </div>
+        <div class="feature">
+            <div class="feature-icon">
+                <i class="fas fa-table"></i>
+            </div>
+            <h3>Header customization</h3>
+            <p>Default or your own CSV/XLS</p>
+        </div>
+        <div class="feature">
+            <div class="feature-icon">
+                <i class="fas fa-check-circle"></i>
+            </div>
+            <h3>Fast processing</h3>
+            <p>Quick and accurate extraction</p>
+        </div>
+    </div>
 
-        <div class="login-screen">
-            <div class="login-container fade-in">
-                <h2>Welcome</h2>
-                <p>Please sign in to continue</p>
-                <a href="/auth/google/login" class="google-login-btn">
-                    <i class="fab fa-google"></i>
-                    Sign in with Google
-                </a>
+    <div class="how-it-works">
+        <h2>How It Works</h2>
+        <div class="steps">
+            <div class="step">
+                <div class="step-icon">
+                    <i class="fas fa-upload"></i>
+                </div>
+                <p>Upload Your Invoices</p>
+            </div>
+            <div class="step">
+                <div class="step-icon">
+                    <i class="fas fa-brain"></i>
+                </div>
+                <p>AI-Powered Extraction</p>
+            </div>
+            <div class="step">
+                <div class="step-icon">
+                    <i class="fas fa-download"></i>
+                </div>
+                <p>Download or Export to Google Drive</p>
             </div>
         </div>
     </div>
 
-    <script>
-        document.addEventListener('DOMContentLoaded', function () {
-            // Any login page specific JavaScript can go here
-        });
-    </script>
-</body>
-
-</html>
+    <div class="pricing-section">
+        <h2>Pricing Plans</h2>
+        <div class="pricing-cards">
+            <div class="pricing-card">
+                <h3>Free Tier</h3>
+                <div class="price">Free</div>
+                <div class="price-period">Forever</div>
+                <ul class="features-list">
+                    <li>Up to 10 documents</li>
+                    <li>Supports PNG and PDF files only</li>
+                    <li>Default CSV headers only</li>
+                    <li>Basic validation</li>
+                </ul>
+                <a href="/auth/google/login" class="get-started-btn">Get Started</a>
+            </div>
+            <div class="pricing-card">
+                <h3>Basic</h3>
+                <div class="price">$29</div>
+                <div class="price-period">One-time</div>
+                <ul class="features-list">
+                    <li>Up to 100 documents</li>
+                    <li>Supports PNG, PDF, and ZIP files</li>
+                    <li>Default or user-provided CSV headers</li>
+                    <li>Enhanced validation with uncertainty highlighting</li>
+                    <li>Email support</li>
+                </ul>
+                <a href="/auth/google/login" class="get-started-btn">Get Started</a>
+            </div>
+            <div class="pricing-card">
+                <h3>Pro</h3>
+                <div class="price">$79</div>
+                <div class="price-period">One-time</div>
+                <ul class="features-list">
+                    <li>Up to 500 documents</li>
+                    <li>Supports PNG, PDF, and ZIP files</li>
+                    <li>Default or user-provided CSV headers</li>
+                    <li>Enhanced validation with uncertainty highlighting</li>
+                    <li>Priority email support</li>
+                    <li>Access to extraction API for integration</li>
+                </ul>
+                <a href="/auth/google/login" class="get-started-btn">Get Started</a>
+            </div>
+            <div class="pricing-card">
+                <h3>Enterprise</h3>
+                <div class="price">$199</div>
+                <div class="price-period">One-time</div>
+                <ul class="features-list">
+                    <li>Unlimited documents</li>
+                    <li>Supports PNG, PDF, ZIP, and bulk uploads</li>
+                    <li>Default or user-provided CSV headers</li>
+                    <li>Advanced validation and data consistency checks</li>
+                    <li>Dedicated account manager</li>
+                    <li>Access to extraction API and custom integrations</li>
+                </ul>
+                <a href="/auth/google/login" class="get-started-btn">Get Started</a>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

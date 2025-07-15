@@ -11,6 +11,9 @@ BASE_DIR = Path(__file__).resolve().parent.parent.parent
 
 class Settings(BaseSettings):
     """Application settings"""
+    # Base directory
+    BASE_DIR: Path = BASE_DIR
+    
     # API Settings
     API_KEY: str = "AIzaSyCrSaObz-M8amEYze6zcooE2ytYoHxr97o"  # Gemini API key
     
@@ -27,13 +30,25 @@ class Settings(BaseSettings):
     OUTPUT_FOLDER: Path = BASE_DIR / "output"
     
     # Database Settings
+    DATABASE_TYPE: str = os.environ.get("DATABASE_TYPE", "sqlite").lower()  # sqlite or dynamodb
     DATABASE_PATH: Path = BASE_DIR / "sqlite.db"
+    
+    # DynamoDB Settings
+    AWS_ACCESS_KEY_ID: str = os.environ.get("AWS_ACCESS_KEY_ID", "")
+    AWS_SECRET_ACCESS_KEY: str = os.environ.get("AWS_SECRET_ACCESS_KEY", "")
+    AWS_REGION: str = os.environ.get("AWS_REGION", "us-east-1")
+    DYNAMODB_ENDPOINT_URL: str = os.environ.get("DYNAMODB_ENDPOINT_URL", "")  # For local testing
+    DYNAMODB_TABLE_PREFIX: str = os.environ.get("DYNAMODB_TABLE_PREFIX", "bank_details_")
     
     # Authentication Settings
     GOOGLE_CLIENT_ID: str = os.environ.get("GOOGLE_CLIENT_ID", "")
     GOOGLE_CLIENT_SECRET: str = os.environ.get("GOOGLE_CLIENT_SECRET", "")
     ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 24  # 1 day
+    
+    # Yativo Payment Gateway Settings
+    YATIVO_SECRET_KEY: str = os.environ.get("YATIVO_SECRET_KEY", "")
+    YATIVO_BASE_URL: str = os.environ.get("YATIVO_BASE_URL", "https://sandbox.yativo.com")
     
     # Ensure directories exist
     def __init__(self, *args, **kwargs):

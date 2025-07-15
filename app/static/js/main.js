@@ -5,6 +5,8 @@ let authToken = null;
 let currentUser = null;
 let selectedFiles = [];
 let processedResults = [];
+let rawExtractions = [];
+let structuredRecords = [];
 
 // Initialize page
 document.addEventListener('DOMContentLoaded', function () {
@@ -20,54 +22,24 @@ document.addEventListener('DOMContentLoaded', function () {
         window.history.replaceState({}, document.title, '/');
     }
 
-    // Check if user is logged in
-    checkAuth().then((isAuthenticated) => {
-        if (isAuthenticated) {
-            // User is authenticated, load app
-            console.log("User is authenticated, loading app");
-            loadApp();
-        } else {
-            // User is not authenticated, show login button
-            console.log("User is not authenticated, showing login button");
-            showLoginScreen();
-        }
-    });
+    // Check if we're on the login page
+    const isLoginPage = window.location.pathname.includes('/login');
 
-    // Setup file upload via button
-    const chooseFilesBtn = document.getElementById('chooseFilesBtn');
-    const fileInput = document.getElementById('fileInput');
-    const uploadSection = document.getElementById('uploadSection');
-
-    if (chooseFilesBtn && fileInput) {
-        chooseFilesBtn.addEventListener('click', function () {
-            fileInput.click();
-        });
-
-        fileInput.addEventListener('change', function (e) {
-            handleFileSelection(e.target.files);
+    // Only check auth if not on login page
+    if (!isLoginPage) {
+        // Check if user is logged in
+        checkAuth().then((isAuthenticated) => {
+            if (isAuthenticated) {
+                // User is authenticated, initialize the app
+                console.log("User is authenticated, initializing app");
+                initializeApp();
+            } else {
+                // User is not authenticated, redirect to login page
+                console.log("User is not authenticated, redirecting to login");
+                window.location.href = '/login';
+            }
         });
     }
-
-    // Setup drag and drop
-    if (uploadSection) {
-        uploadSection.addEventListener('dragover', function (e) {
-            e.preventDefault();
-            uploadSection.classList.add('dragover');
-        });
-
-        uploadSection.addEventListener('dragleave', function () {
-            uploadSection.classList.remove('dragover');
-        });
-
-        uploadSection.addEventListener('drop', function (e) {
-            e.preventDefault();
-            uploadSection.classList.remove('dragover');
-            handleFileSelection(e.dataTransfer.files);
-        });
-    }
-
-    // Check for existing session data
-    checkSessionStatus();
 });
 
 function storeToken(token) {
@@ -122,128 +94,463 @@ async function checkAuth() {
     }
 }
 
-function showLoginScreen() {
-    // Hide app content
-    document.getElementById('appContent').style.display = 'none';
+function initializeApp() {
+    // Set up the file upload functionality
+    setupFileUpload();
 
-    // Show login screen
-    const loginScreen = document.createElement('div');
-    loginScreen.id = 'loginScreen';
-    loginScreen.className = 'login-screen';
-    loginScreen.innerHTML = `
-        <div class="login-container">
-            <h2>Welcome to Bank Details Extractor</h2>
-            <p>Please sign in to continue</p>
-            <button id="googleLoginBtn" class="google-login-btn">
-                <i class="fas fa-google"></i> Sign in with Google
-            </button>
-        </div>
-    `;
+    // Set up the export options
+    setupExportOptions();
 
-    document.querySelector('.main-content').appendChild(loginScreen);
+    // Load header configurations
+    loadHeaderConfigurations();
 
-    // Add event listener to login button
-    document.getElementById('googleLoginBtn').addEventListener('click', () => {
-        window.location.href = '/auth/login';
-    });
+    // Check session status to load any existing data
+    checkSessionStatus();
 }
 
-function loadApp() {
-    // Show app content
-    document.getElementById('appContent').style.display = 'block';
+// Load header configurations
+async function loadHeaderConfigurations() {
+    try {
+        const token = getToken();
+        const response = await fetch('/api/header-config/', {
+            headers: {
+                'Authorization': `Bearer ${token}`
+            }
+        });
 
-    // Add user info to header
-    if (currentUser) {
-        const userInfo = document.createElement('div');
-        userInfo.className = 'user-info';
-        userInfo.innerHTML = `
-            <span class="user-name">${currentUser.name || currentUser.email}</span>
-            <button id="logoutBtn" class="logout-btn">
-                <i class="fas fa-sign-out-alt"></i> Logout
-            </button>
-        `;
+        if (response.ok) {
+            const configs = await response.json();
+            const dropdown = document.getElementById('header-config-dropdown');
 
-        document.querySelector('.header').appendChild(userInfo);
+            // Clear existing options except the default
+            while (dropdown.options.length > 1) {
+                dropdown.remove(1);
+            }
 
-        // Add event listener to logout button
-        document.getElementById('logoutBtn').addEventListener('click', logout);
+            // Add configurations to dropdown
+            configs.forEach(config => {
+                const option = document.createElement('option');
+                option.value = config.id;
+                option.textContent = config.name + (config.is_default ? ' (Default)' : '');
+                dropdown.appendChild(option);
+
+                // Select default configuration
+                if (config.is_default) {
+                    dropdown.value = config.id;
+                }
+            });
+        } else {
+            console.error('Failed to load header configurations');
+        }
+    } catch (error) {
+        console.error('Error loading header configurations:', error);
+    }
+}
+
+function setupFileUpload() {
+    const dropArea = document.getElementById('drop-area');
+    const fileInput = document.getElementById('file-input');
+    const fileList = document.getElementById('file-list');
+    const uploadButton = document.getElementById('upload-button');
+    const clearButton = document.getElementById('clear-button');
+
+    if (!dropArea || !fileInput || !fileList || !uploadButton || !clearButton) {
+        console.error("Required file upload elements not found");
+        return;
     }
 
-    // First update session status to get pre-populated files
-    updateSessionStatus().then(() => {
-        console.log("Session status updated with pre-populated files");
-        setupEventListeners();
-        console.log("Event listeners set up");
+    // Prevent default drag behaviors
+    ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
+        dropArea.addEventListener(eventName, preventDefaults, false);
+        document.body.addEventListener(eventName, preventDefaults, false);
     });
-}
 
-function logout() {
-    // Clear token and reload page
-    clearToken();
-    window.location.reload();
-}
+    // Highlight drop area when item is dragged over it
+    ['dragenter', 'dragover'].forEach(eventName => {
+        dropArea.addEventListener(eventName, highlight, false);
+    });
 
-function setupEventListeners() {
-    const uploadSection = document.getElementById('uploadSection');
-    const fileInput = document.getElementById('fileInput');
-    const chooseFilesBtn = document.getElementById('chooseFilesBtn');
+    ['dragleave', 'drop'].forEach(eventName => {
+        dropArea.addEventListener(eventName, unhighlight, false);
+    });
 
-    console.log("Setting up event listeners for upload section");
+    // Handle dropped files
+    dropArea.addEventListener('drop', handleDrop, false);
 
-    // Drag and drop functionality
-    uploadSection.addEventListener('dragover', (e) => {
+    // Handle file input change
+    fileInput.addEventListener('change', handleFileInputChange);
+
+    // Handle upload button click
+    document.getElementById('upload-form').addEventListener('submit', function (e) {
         e.preventDefault();
-        uploadSection.classList.add('dragover');
+        if (selectedFiles.length > 0) {
+            uploadFiles(selectedFiles);
+        }
     });
 
-    uploadSection.addEventListener('dragleave', () => {
-        uploadSection.classList.remove('dragover');
+    // Handle clear button click
+    clearButton.addEventListener('click', async function () {
+        if (confirm('Are you sure you want to clear all data? This will remove all uploaded files and extracted data.')) {
+            await clearAllData();
+        } else {
+            // Just clear the selected files without calling the backend
+            clearSelectedFiles();
+        }
     });
 
-    uploadSection.addEventListener('drop', (e) => {
+    function preventDefaults(e) {
         e.preventDefault();
-        uploadSection.classList.remove('dragover');
-        const files = e.dataTransfer.files;
+        e.stopPropagation();
+    }
+
+    function highlight() {
+        dropArea.classList.add('highlight');
+    }
+
+    function unhighlight() {
+        dropArea.classList.remove('highlight');
+    }
+
+    function handleDrop(e) {
+        const dt = e.dataTransfer;
+        const files = dt.files;
         handleFiles(files);
-    });
+    }
 
-    // File input change
-    fileInput.addEventListener('change', (e) => {
-        handleFiles(e.target.files);
-    });
+    function handleFileInputChange() {
+        const files = fileInput.files;
+        handleFiles(files);
+    }
 
-    // Choose files button click - separate from the upload section click
-    chooseFilesBtn.addEventListener('click', (e) => {
-        e.stopPropagation(); // Prevent event from bubbling up to the upload section
-        fileInput.click();
-    });
+    function handleFiles(files) {
+        if (files.length === 0) return;
+
+        // Filter for PDF, image, and ZIP files
+        const allowedTypes = [
+            'application/pdf',
+            'image/png',
+            'image/jpeg',
+            'image/webp',
+            'application/zip'
+        ];
+        const allowedExtensions = ['.pdf', '.png', '.jpg', '.jpeg', '.webp', '.zip'];
+
+        // Separate valid and invalid files
+        const validFiles = [];
+        const invalidFiles = [];
+
+        Array.from(files).forEach(file => {
+            const fileExtension = '.' + file.name.split('.').pop().toLowerCase();
+            if (allowedTypes.includes(file.type) || allowedExtensions.includes(fileExtension)) {
+                validFiles.push(file);
+            } else {
+                invalidFiles.push(file);
+            }
+        });
+
+        // Show message if there are invalid files
+        if (invalidFiles.length > 0) {
+            const invalidFileNames = invalidFiles.map(f => f.name).join(', ');
+            showStatusMessage(`Unsupported file type(s): ${invalidFileNames}. Only PDF, PNG, JPG, JPEG, WebP, and ZIP files are supported.`, 'error');
+        }
+
+        if (validFiles.length === 0) {
+            return;
+        }
+
+        // Add to selected files
+        selectedFiles = [...selectedFiles, ...validFiles];
+
+        // Update UI
+        updateFileList();
+
+        // Show count of selected files
+        const fileCount = selectedFiles.length;
+        const fileWord = fileCount === 1 ? 'file' : 'files';
+        showStatusMessage(`${fileCount} ${fileWord} selected and ready to upload`, 'info');
+
+        // Enable upload and clear buttons
+        uploadButton.disabled = false;
+        clearButton.disabled = false;
+    }
+
+    function updateFileList() {
+        fileList.innerHTML = '';
+
+        // Show file count if many files
+        if (selectedFiles.length > 10) {
+            const fileCountHeader = document.createElement('div');
+            fileCountHeader.className = 'file-count-header';
+            fileCountHeader.innerHTML = `<span>${selectedFiles.length} files selected</span> <small>(showing first 10)</small>`;
+            fileList.appendChild(fileCountHeader);
+        }
+
+        // Show files (limit to first 10 if there are many)
+        const filesToShow = selectedFiles.length > 10 ? selectedFiles.slice(0, 10) : selectedFiles;
+
+        filesToShow.forEach((file, index) => {
+            const fileItem = document.createElement('div');
+            fileItem.className = 'file-item';
+
+            const fileExtension = '.' + file.name.split('.').pop().toLowerCase();
+            const fileIcon = file.type === 'application/pdf' || fileExtension === '.pdf' ? 'fa-file-pdf' :
+                file.type === 'image/png' || fileExtension === '.png' ? 'fa-file-image' :
+                    file.type === 'image/jpeg' || fileExtension === '.jpg' || fileExtension === '.jpeg' ? 'fa-file-image' :
+                        file.type === 'image/webp' || fileExtension === '.webp' ? 'fa-file-image' :
+                            file.type === 'application/zip' || fileExtension === '.zip' ? 'fa-file-archive' : 'fa-file';
+
+            fileItem.innerHTML = `
+                <div class="file-name">
+                    <i class="fas ${fileIcon}"></i>
+                    ${file.name} (${formatFileSize(file.size)})
+                </div>
+                <button type="button" class="file-remove" data-index="${index}">
+                    <i class="fas fa-times"></i>
+                </button>
+            `;
+
+            fileList.appendChild(fileItem);
+
+            // Add event listener to remove button
+            fileItem.querySelector('.file-remove').addEventListener('click', function () {
+                const index = parseInt(this.getAttribute('data-index'));
+                selectedFiles.splice(index, 1);
+                updateFileList();
+
+                if (selectedFiles.length === 0) {
+                    uploadButton.disabled = true;
+                    clearButton.disabled = true;
+                    showStatusMessage('No files uploaded yet', 'info');
+                } else {
+                    const fileCount = selectedFiles.length;
+                    const fileWord = fileCount === 1 ? 'file' : 'files';
+                    showStatusMessage(`${fileCount} ${fileWord} selected and ready to upload`, 'info');
+                }
+            });
+        });
+
+        // Show "more files" indicator if needed
+        if (selectedFiles.length > 10) {
+            const moreFiles = document.createElement('div');
+            moreFiles.className = 'more-files';
+            moreFiles.textContent = `+ ${selectedFiles.length - 10} more files`;
+            fileList.appendChild(moreFiles);
+        }
+    }
 }
 
-async function handleFiles(files) {
-    console.log("handleFiles called with", files.length, "files");
+// Global clearSelectedFiles function that can be called from anywhere
+function clearSelectedFiles() {
+    selectedFiles = [];
+    const fileList = document.getElementById('file-list');
+    const uploadButton = document.getElementById('upload-button');
+    const clearButton = document.getElementById('clear-button');
+    const fileInput = document.getElementById('file-input');
 
-    if (!files || files.length === 0) {
-        console.log("No files selected");
+    if (fileList) fileList.innerHTML = '';
+    if (uploadButton) uploadButton.disabled = true;
+    if (clearButton) clearButton.disabled = true;
+    if (fileInput) fileInput.value = '';
+}
+
+// Function to clear all data (call backend endpoint)
+async function clearAllData() {
+    showStatusMessage('Clearing all data...', 'info');
+    showProgressBar(true);
+
+    try {
+        const token = getToken();
+        const response = await fetch('/api/clear-session', {
+            method: 'POST',
+            headers: {
+                'Authorization': `Bearer ${token}`
+            }
+        });
+
+        if (!response.ok) {
+            const errorData = await response.json();
+            throw new Error(errorData.detail || `HTTP error! Status: ${response.status}`);
+        }
+
+        // Clear selected files
+        clearSelectedFiles();
+
+        // Update session status to refresh UI
+        await updateSessionStatus();
+
+        showStatusMessage('All data has been cleared successfully', 'success');
+    } catch (error) {
+        console.error('Error clearing data:', error);
+        showStatusMessage(`Failed to clear data: ${error.message}`, 'error');
+    } finally {
+        showProgressBar(false);
+    }
+}
+
+function setupExportOptions() {
+    const exportFormat = document.getElementById('export-format');
+    const dataTypeContainer = document.getElementById('data-type-container');
+    const dataType = document.getElementById('data-type');
+    const customHeader = document.getElementById('custom-header');
+    const headerInputContainer = document.getElementById('header-input-container');
+    const headerInput = document.getElementById('header-input');
+    const downloadBtn = document.getElementById('download-btn');
+    const driveBtn = document.getElementById('drive-btn');
+
+    if (!exportFormat || !dataTypeContainer || !dataType || !customHeader ||
+        !headerInputContainer || !headerInput || !downloadBtn || !driveBtn) {
+        console.error("Required export option elements not found");
         return;
     }
 
-    // Filter for PDF files
-    const pdfFiles = Array.from(files).filter(file => {
-        console.log("File:", file.name, "Type:", file.type);
-        // Check both MIME type and extension for PDF
-        return file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf');
+    // Handle export format change
+    exportFormat.addEventListener('change', function () {
+        updateExportOptions();
     });
 
-    console.log("Filtered PDF files:", pdfFiles.length);
+    // Handle data type change
+    dataType.addEventListener('change', function () {
+        updateHeaderVisibility();
+    });
 
-    if (pdfFiles.length === 0) {
-        showResults('No PDF files selected. Please select PDF files only.', false);
-        return;
+    // Handle custom header toggle
+    customHeader.addEventListener('change', function () {
+        headerInputContainer.style.display = this.checked ? 'block' : 'none';
+    });
+
+    // Handle download button click
+    downloadBtn.addEventListener('click', function () {
+        downloadExport();
+    });
+
+    // Handle drive button click
+    driveBtn.addEventListener('click', function () {
+        exportToDrive();
+    });
+
+    function updateExportOptions() {
+        const format = exportFormat.value;
+
+        // Show/hide data type selector for JSON format
+        if (format === 'json') {
+            dataTypeContainer.style.display = 'block';
+        } else {
+            dataTypeContainer.style.display = 'none';
+        }
+
+        updateHeaderVisibility();
     }
 
-    for (let file of pdfFiles) {
-        console.log("Processing PDF file:", file.name);
-        await processFile(file);
+    function updateHeaderVisibility() {
+        const format = exportFormat.value;
+        const isRawData = dataType.value === 'raw';
+
+        // Hide header config for JSON raw data
+        if (format === 'json' && isRawData) {
+            document.getElementById('header-config').style.display = 'none';
+        } else {
+            document.getElementById('header-config').style.display = 'block';
+        }
+    }
+}
+
+function formatFileSize(bytes) {
+    if (bytes === 0) return '0 Bytes';
+
+    const k = 1024;
+    const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+}
+
+async function uploadFiles(files) {
+    showProgressBar(true);
+    showStatusMessage('Uploading and processing files...', 'info');
+
+    try {
+        const formData = new FormData();
+        files.forEach(file => {
+            formData.append('files', file);
+        });
+
+        // Add header configuration if selected
+        const headerConfigId = document.getElementById('header-config-dropdown').value;
+        if (headerConfigId) {
+            formData.append('header_config_id', headerConfigId);
+        }
+
+        const token = getToken();
+
+        const response = await fetch('/api/extract', {
+            method: 'POST',
+            body: formData,
+            headers: {
+                'Authorization': `Bearer ${token}`
+            }
+        });
+
+        if (!response.ok) {
+            const errorData = await response.json();
+            throw new Error(errorData.detail || `HTTP error! Status: ${response.status}`);
+        }
+
+        const data = await response.json();
+
+        // Check for errors
+        if (data.errors && data.errors.length > 0) {
+            const errorMessages = data.errors.map(err =>
+                `<li><strong>${err.filename}</strong>: ${err.error}</li>`
+            ).join('');
+
+            if (data.results && data.results.length > 0) {
+                showStatusMessage(`Processed ${data.results.length} records with some errors: <ul>${errorMessages}</ul>`, 'warning');
+            } else {
+                showStatusMessage(`Failed to process files: <ul>${errorMessages}</ul>`, 'error');
+            }
+        } else {
+            showStatusMessage(`Successfully processed ${data.results ? data.results.length : 0} records.`, 'success');
+        }
+
+        // Clear selected files after successful upload
+        clearSelectedFiles();
+
+        // Update session status to refresh data
+        await updateSessionStatus();
+
+        // Update extraction results display
+        updateExtractionResults();
+    } catch (error) {
+        console.error('Error uploading files:', error);
+        showStatusMessage(`Error: ${error.message}`, 'error');
+    } finally {
+        showProgressBar(false);
+    }
+}
+
+function showProgressBar(show) {
+    const progressContainer = document.getElementById('progress-container');
+    const progressBar = document.getElementById('progress-bar');
+
+    if (progressContainer) {
+        progressContainer.style.display = show ? 'block' : 'none';
+
+        if (show && progressBar) {
+            // Animate the progress bar
+            progressBar.style.width = '0%';
+            setTimeout(() => {
+                progressBar.style.width = '90%';
+            }, 100);
+        }
+    }
+}
+
+function showStatusMessage(message, type = 'info') {
+    const statusMessage = document.getElementById('status-message');
+    if (statusMessage) {
+        statusMessage.innerHTML = message;
+        statusMessage.className = 'status-message';
+        statusMessage.classList.add(type);
     }
 }
 
@@ -263,37 +570,23 @@ async function updateSessionStatus() {
         }
 
         const status = await response.json();
-
         console.log("Session status:", status);
 
-        // Update UI with file information
-        if (status.files && status.files.length > 0) {
-            const filesDisplay = document.getElementById('filesDisplay');
-            if (filesDisplay) {
-                filesDisplay.innerHTML = status.files.map(file =>
-                    `<div>${file.name}</div>`
-                ).join('');
-                filesDisplay.classList.add('has-files');
-            }
-
-            const totalFiles = document.getElementById('totalFiles');
-            if (totalFiles) {
-                totalFiles.textContent = status.files.length;
-            }
+        // Store raw extractions and structured records for later use
+        if (status.results) {
+            rawExtractions = status.results.filter(result => result.is_raw_extraction);
+            structuredRecords = status.results.filter(result => !result.is_raw_extraction);
         }
 
-        // Update total records count
-        const totalRecordsElement = document.getElementById('totalRecords');
-        if (totalRecordsElement) {
-            totalRecordsElement.textContent = status.total_records || 0;
-        }
+        // Enable/disable buttons based on available records
+        const hasRecords = (status.total_records || 0) > 0;
+        const downloadBtn = document.getElementById('download-btn');
+        const driveBtn = document.getElementById('drive-btn');
+        const clearBtn = document.getElementById('clear-button');
 
-        // Enable download button if we have records
-        if (status.total_records > 0) {
-            document.getElementById('downloadBtn').disabled = false;
-        } else {
-            document.getElementById('downloadBtn').disabled = true;
-        }
+        if (downloadBtn) downloadBtn.disabled = !hasRecords;
+        if (driveBtn) driveBtn.disabled = !hasRecords;
+        if (clearBtn) clearBtn.disabled = !hasRecords;
 
         return status;
     } catch (error) {
@@ -302,405 +595,193 @@ async function updateSessionStatus() {
     }
 }
 
-function updateFilesList(filesDisplay) {
-    const filesElement = document.getElementById('filesDisplay');
-    filesElement.textContent = filesDisplay;
+function updateExtractionResults() {
+    const extractionResults = document.getElementById('extraction-results');
+    if (!extractionResults) return;
 
-    if (filesDisplay !== 'No files selected') {
-        filesElement.classList.add('has-files');
-    } else {
-        filesElement.classList.remove('has-files');
+    if (structuredRecords.length === 0 && rawExtractions.length === 0) {
+        extractionResults.innerHTML = '<div class="no-results">No extraction results available</div>';
+        return;
     }
+
+    let html = '';
+
+    // Use structured records if available, otherwise use raw extractions
+    const records = structuredRecords.length > 0 ? structuredRecords : rawExtractions;
+
+    records.slice(0, 5).forEach(record => {
+        html += `
+            <div class="result-item">
+                <div class="result-header">
+                    <div class="result-title">${record.bank_name || 'Unknown Bank'}</div>
+                </div>
+                <div class="result-details">
+                    <div class="result-field">
+                        <div class="field-label">Account Number</div>
+                        <div class="field-value">${record.account_number || 'N/A'}</div>
+                    </div>
+                    <div class="result-field">
+                        <div class="field-label">Account Name</div>
+                        <div class="field-value">${record.account_name || 'N/A'}</div>
+                    </div>
+                    <div class="result-field">
+                        <div class="field-label">SWIFT/BIC</div>
+                        <div class="field-value">${record.swift_code || 'N/A'}</div>
+                    </div>
+                    <div class="result-field">
+                        <div class="field-label">IBAN</div>
+                        <div class="field-value">${record.iban || 'N/A'}</div>
+                    </div>
+                </div>
+            </div>
+        `;
+    });
+
+    if (records.length > 5) {
+        html += `<div class="more-results">+ ${records.length - 5} more records</div>`;
+    }
+
+    extractionResults.innerHTML = html;
 }
 
-function updateCounts(records, files) {
-    document.getElementById('totalRecords').textContent = records;
-    document.getElementById('totalFiles').textContent = files;
-}
-
-async function processFile(file) {
-    console.log("Processing file:", file.name);
-    showLoading(true);
-    hideResults();
-
+async function checkSessionStatus() {
     try {
-        // Create FormData and append the file
-        const formData = new FormData();
-        formData.append('files', file);
-        console.log("Sending request to /api/extract endpoint with file:", file.name);
-
-        // Get token
         const token = getToken();
 
-        // Send the request
-        const response = await fetch('/api/extract', {
-            method: 'POST',
-            body: formData,
+        const response = await fetch('/api/session-status', {
             headers: {
                 'Authorization': `Bearer ${token}`
             }
         });
 
-        console.log("Response received:", response.status);
-
-        // Check if response is ok
         if (!response.ok) {
-            throw new Error(`Server responded with status: ${response.status}`);
+            throw new Error(`HTTP error! Status: ${response.status}`);
         }
 
-        // Parse the response
-        const result = await response.json();
-        console.log("Response data:", result);
+        const status = await response.json();
 
-        if (result.success) {
-            // Update UI with results
-            showResults(
-                `✅ Successfully processed "${file.name}"<br>
-                📄 ${result.records_added} new records added<br>
-                💾 Data has been added to database`,
-                true
-            );
+        // Store raw extractions and structured records
+        if (status.results) {
+            rawExtractions = status.results.filter(result => result.is_raw_extraction);
+            structuredRecords = status.results.filter(result => !result.is_raw_extraction);
+        }
 
-            // Update session status to refresh counts and files
-            await updateSessionStatus();
-        } else {
-            console.error("Error in response:", result.error);
-            showResults(`❌ Error processing "${file.name}": ${result.error}`, false);
+        // Update extraction results display
+        updateExtractionResults();
+
+        // Enable/disable buttons
+        const hasRecords = (status.total_records || 0) > 0;
+        const downloadBtn = document.getElementById('download-btn');
+        const driveBtn = document.getElementById('drive-btn');
+        const clearBtn = document.getElementById('clear-button');
+
+        if (downloadBtn) downloadBtn.disabled = !hasRecords;
+        if (driveBtn) driveBtn.disabled = !hasRecords;
+        if (clearBtn) clearBtn.disabled = !hasRecords;
+
+        if (hasRecords) {
+            showStatusMessage(`${status.total_records} records available for export`, 'success');
         }
     } catch (error) {
-        console.error("Upload failed:", error);
-        showResults(`❌ Upload failed: ${error.message}`, false);
+        console.error('Error checking session status:', error);
+        showStatusMessage('Error loading session data', 'error');
+    }
+}
+
+function downloadExport() {
+    const format = document.getElementById('export-format').value;
+    const isRawData = document.getElementById('data-type').value === 'raw';
+    const useCustomHeader = document.getElementById('custom-header').checked;
+    const customHeaders = useCustomHeader ? document.getElementById('header-input').value : '';
+
+    // Get selected header configuration
+    const headerConfigId = document.getElementById('header-config-dropdown').value;
+
+    let url = '';
+
+    if (format === 'json') {
+        url = `/api/download-json?use_raw=${isRawData}`;
+    } else {
+        url = `/api/download-csv?format=${format}&use_raw=${isRawData}`;
+
+        if (headerConfigId) {
+            url += `&config_id=${headerConfigId}`;
+        } else if (useCustomHeader && customHeaders) {
+            url += `&custom_headers=${encodeURIComponent(customHeaders)}`;
+        }
+    }
+
+    // Add auth token to URL
+    const token = getToken();
+    if (token) {
+        url += `&token=${encodeURIComponent(token)}`;
+    }
+
+    // Trigger download
+    window.location.href = url;
+}
+
+async function exportToDrive() {
+    showProgressBar(true);
+    showStatusMessage('Exporting to Google Drive...', 'info');
+
+    try {
+        const format = document.getElementById('export-format').value;
+        const isRawData = document.getElementById('data-type').value === 'raw';
+        const useCustomHeader = document.getElementById('custom-header').checked;
+        const customHeaders = useCustomHeader ? document.getElementById('header-input').value : '';
+
+        // Get selected header configuration
+        const headerConfigId = document.getElementById('header-config-dropdown').value;
+
+        // Generate filename with timestamp
+        const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+        const fileName = `bank_details_${timestamp}.${format === 'json' ? 'json' : format}`;
+
+        const token = getToken();
+
+        const response = await fetch('/drive/export', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${token}`
+            },
+            body: JSON.stringify({
+                file_name: fileName,
+                format: format,
+                use_raw: isRawData,
+                config_id: headerConfigId || undefined,
+                custom_headers: useCustomHeader && !headerConfigId ? customHeaders : null
+            })
+        });
+
+        if (!response.ok) {
+            const errorData = await response.json();
+
+            // Check if it's an authorization error
+            if (response.status === 401 && errorData.detail === "Google Drive authorization required") {
+                // Redirect to authorization URL
+                window.location.href = '/drive/auth';
+                return;
+            }
+
+            throw new Error(errorData.detail || 'Failed to export to Google Drive');
+        }
+
+        const result = await response.json();
+
+        showStatusMessage(`
+            <div class="success-message">
+                <p>Successfully exported to Google Drive!</p>
+                <p><a href="${result.link}" target="_blank" class="drive-link">
+                    <i class="fab fa-google-drive"></i> View File in Google Drive
+                </a></p>
+            </div>
+        `, 'success');
+    } catch (error) {
+        console.error('Error exporting to Google Drive:', error);
+        showStatusMessage(`Error exporting to Google Drive: ${error.message}`, 'error');
     } finally {
-        showLoading(false);
+        showProgressBar(false);
     }
-}
-
-function showLoading(show) {
-    const loadingSection = document.getElementById('loadingSection');
-    if (show) {
-        loadingSection.classList.add('show');
-    } else {
-        loadingSection.classList.remove('show');
-    }
-}
-
-function showResults(message, isSuccess) {
-    const resultsSection = document.getElementById('resultsSection');
-    const resultsTitle = document.getElementById('resultsTitle');
-    const resultsTitleText = document.getElementById('resultsTitleText');
-    const resultsContent = document.getElementById('resultsContent');
-
-    // Set content
-    resultsContent.innerHTML = message;
-
-    // Set styling based on success/error
-    if (isSuccess) {
-        resultsSection.classList.remove('error');
-        resultsTitle.classList.remove('error');
-        resultsTitle.classList.add('success');
-        resultsContent.classList.remove('error');
-        resultsTitleText.textContent = 'Processing Complete';
-    } else {
-        resultsSection.classList.add('error');
-        resultsTitle.classList.remove('success');
-        resultsTitle.classList.add('error');
-        resultsContent.classList.add('error');
-        resultsTitleText.textContent = 'Processing Error';
-    }
-
-    // Show with animation
-    resultsSection.classList.add('show', 'fade-in');
-}
-
-function hideResults() {
-    const resultsSection = document.getElementById('resultsSection');
-    resultsSection.classList.remove('show');
-}
-
-async function clearSession() {
-    if (confirm('Are you sure you want to clear the current session? This will delete all your records.')) {
-        try {
-            const token = getToken();
-
-            const response = await fetch('/api/clear-session', {
-                method: 'POST',
-                headers: {
-                    'Authorization': `Bearer ${token}`
-                }
-            });
-
-            if (response.ok) {
-                // Reset global variables
-                processedFiles = [];
-                totalRecords = 0;
-                selectedFiles = [];
-                processedResults = [];
-
-                // Reset UI
-                const filesDisplay = document.getElementById('filesDisplay');
-                if (filesDisplay) {
-                    filesDisplay.innerHTML = 'No files selected';
-                    filesDisplay.classList.remove('has-files');
-                }
-
-                const totalRecordsElement = document.getElementById('totalRecords');
-                if (totalRecordsElement) {
-                    totalRecordsElement.textContent = '0';
-                }
-
-                const totalFiles = document.getElementById('totalFiles');
-                if (totalFiles) {
-                    totalFiles.textContent = '0';
-                }
-
-                // Disable download button
-                const downloadBtn = document.getElementById('downloadBtn');
-                if (downloadBtn) {
-                    downloadBtn.disabled = true;
-                }
-
-                hideResults();
-                showResults('✅ Session cleared successfully. All records have been deleted.', true);
-            }
-        } catch (error) {
-            showResults('❌ Error clearing session: ' + error.message, false);
-        }
-    }
-}
-
-// Download CSV of all processed results
-function downloadCSV() {
-    // Use the correct API endpoint for downloading CSV
-    window.location.href = '/api/download-csv';
-}
-
-// Handle file selection
-function handleFileSelection(files) {
-    if (!files || files.length === 0) return;
-
-    // Filter for PDF files only
-    const pdfFiles = Array.from(files).filter(file => file.type === 'application/pdf');
-
-    if (pdfFiles.length === 0) {
-        showError('Please select PDF files only.');
-        return;
-    }
-
-    // Add to selected files
-    selectedFiles = [...selectedFiles, ...pdfFiles];
-
-    // Update UI
-    updateFilesDisplay();
-
-    // Upload files
-    uploadFiles(pdfFiles);
-}
-
-// Update the files display in the UI
-function updateFilesDisplay() {
-    const filesDisplay = document.getElementById('filesDisplay');
-    const totalFiles = document.getElementById('totalFiles');
-
-    if (filesDisplay) {
-        if (selectedFiles.length > 0) {
-            filesDisplay.innerHTML = selectedFiles.map(file =>
-                `<div>${file.name}</div>`
-            ).join('');
-            filesDisplay.classList.add('has-files');
-        } else {
-            filesDisplay.innerHTML = 'No files selected';
-            filesDisplay.classList.remove('has-files');
-        }
-    }
-
-    if (totalFiles) {
-        totalFiles.textContent = selectedFiles.length;
-    }
-}
-
-// Format file size to human-readable format
-function formatFileSize(bytes) {
-    if (bytes === 0) return '0 Bytes';
-
-    const k = 1024;
-    const sizes = ['Bytes', 'KB', 'MB', 'GB'];
-    const i = Math.floor(Math.log(bytes) / Math.log(k));
-
-    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
-}
-
-// Upload files to the server
-function uploadFiles(files) {
-    const loadingSection = document.getElementById('loadingSection');
-    const resultsSection = document.getElementById('resultsSection');
-
-    if (loadingSection) {
-        loadingSection.classList.add('show');
-    }
-
-    if (resultsSection) {
-        resultsSection.classList.remove('show');
-    }
-
-    const formData = new FormData();
-    files.forEach(file => {
-        formData.append('files', file);
-    });
-
-    fetch('/api/extract', {
-        method: 'POST',
-        body: formData,
-        headers: {
-            // Don't set Content-Type with FormData as browser will set it with boundary
-        }
-    })
-        .then(response => {
-            if (!response.ok) {
-                throw new Error(`HTTP error! Status: ${response.status}`);
-            }
-            return response.json();
-        })
-        .then(data => {
-            processedResults = [...processedResults, ...data.results];
-            updateResults(data);
-
-            if (loadingSection) {
-                loadingSection.classList.remove('show');
-            }
-        })
-        .catch(error => {
-            console.error('Error uploading files:', error);
-            showError('Error processing files. Please try again.');
-
-            if (loadingSection) {
-                loadingSection.classList.remove('show');
-            }
-        });
-}
-
-// Update results in the UI
-function updateResults(data) {
-    const resultsSection = document.getElementById('resultsSection');
-    const resultsContent = document.getElementById('resultsContent');
-    const resultsTitleText = document.getElementById('resultsTitleText');
-    const totalRecords = document.getElementById('totalRecords');
-
-    if (!resultsSection || !resultsContent) return;
-
-    if (data.results && data.results.length > 0) {
-        // Show results section
-        resultsSection.classList.add('show');
-        resultsSection.classList.remove('error');
-
-        // Update title
-        if (resultsTitleText) {
-            resultsTitleText.textContent = 'Processing Complete';
-        }
-
-        // Create results summary
-        let resultsHtml = '<div class="results-summary">';
-        resultsHtml += `<p>${data.results.length} records extracted successfully.</p>`;
-
-        // Add a preview of the first few records
-        const previewCount = Math.min(3, data.results.length);
-        resultsHtml += '<div class="results-preview">';
-        resultsHtml += '<h3>Preview:</h3>';
-        resultsHtml += '<ul>';
-
-        for (let i = 0; i < previewCount; i++) {
-            const record = data.results[i];
-            resultsHtml += `<li><strong>${record.bank_name || 'Unknown Bank'}</strong>: Account ${record.account_number || 'N/A'}</li>`;
-        }
-
-        resultsHtml += '</ul>';
-
-        if (data.results.length > previewCount) {
-            resultsHtml += `<p>...and ${data.results.length - previewCount} more records.</p>`;
-        }
-
-        resultsHtml += '</div></div>';
-
-        // Update content
-        resultsContent.innerHTML = resultsHtml;
-        resultsContent.classList.remove('error');
-
-        // Update total records count
-        if (totalRecords) {
-            totalRecords.textContent = processedResults.length;
-        }
-
-        // Enable download button
-        const downloadBtn = document.getElementById('downloadBtn');
-        if (downloadBtn) {
-            downloadBtn.disabled = false;
-        }
-    } else {
-        // Show error
-        showError('No bank details found in the uploaded files.');
-    }
-}
-
-// Show error message
-function showError(message) {
-    const resultsSection = document.getElementById('resultsSection');
-    const resultsContent = document.getElementById('resultsContent');
-    const resultsTitleText = document.getElementById('resultsTitleText');
-
-    if (!resultsSection || !resultsContent) return;
-
-    // Show results section with error styling
-    resultsSection.classList.add('show');
-    resultsSection.classList.add('error');
-
-    // Update title
-    if (resultsTitleText) {
-        resultsTitleText.textContent = 'Error';
-    }
-
-    // Update content
-    resultsContent.innerHTML = `<p>${message}</p>`;
-    resultsContent.classList.add('error');
-}
-
-// Check session status on page load
-function checkSessionStatus() {
-    fetch('/api/session-status')
-        .then(response => {
-            if (!response.ok) {
-                throw new Error(`HTTP error! Status: ${response.status}`);
-            }
-            return response.json();
-        })
-        .then(data => {
-            if (data.files && data.files.length > 0) {
-                // Restore session data
-                selectedFiles = data.files.map(fileInfo => {
-                    return {
-                        name: fileInfo.name,
-                        size: fileInfo.size,
-                        type: 'application/pdf'
-                    };
-                });
-
-                processedResults = data.results || [];
-
-                // Update UI
-                updateFilesDisplay();
-
-                const totalRecords = document.getElementById('totalRecords');
-                if (totalRecords) {
-                    totalRecords.textContent = processedResults.length;
-                }
-
-                // Show results if available
-                if (processedResults.length > 0) {
-                    updateResults({
-                        results: processedResults
-                    });
-                }
-            }
-        })
-        .catch(error => {
-            console.error('Error checking session status:', error);
-        });
 } 

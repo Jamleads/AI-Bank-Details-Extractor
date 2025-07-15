@@ -1,9 +1,10 @@
 """
 Pydantic models for bank details
 """
-from typing import List, Optional, Dict, Any
+from typing import List, Optional, Dict, Any, Union
 from datetime import datetime
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator, model_validator
+import json
 
 
 class BankDetail(BaseModel):
@@ -21,7 +22,17 @@ class BankDetail(BaseModel):
     account_type: Optional[str] = None
     currency: Optional[str] = None
     balance: Optional[str] = None
-    other_details: Optional[str] = None
+    other_details: Optional[Union[str, Dict[str, Any]]] = None
+    
+    @model_validator(mode='after')
+    def convert_dict_to_str(self) -> 'BankDetail':
+        """Convert dictionary other_details to string"""
+        if isinstance(self.other_details, dict):
+            try:
+                self.other_details = json.dumps(self.other_details)
+            except Exception:
+                self.other_details = str(self.other_details)
+        return self
 
 
 class BankDetailResponse(BaseModel):
@@ -52,6 +63,7 @@ class ProcessResponse(BaseModel):
     error: Optional[str] = None
     records_added: int = 0
     results: List[Dict[str, Any]] = Field(default_factory=list)
+    errors: List[Dict[str, str]] = Field(default_factory=list)
 
 
 class SessionStatus(BaseModel):

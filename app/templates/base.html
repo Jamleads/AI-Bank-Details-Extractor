@@ -5,31 +5,112 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{% block title %}Bank Details Extractor{% endblock %}</title>
-    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
-    <link href="{{ url_for('static', path='/css/style.css') }}" rel="stylesheet">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="{{ url_for('static', path='css/style.css') }}">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
     {% block extra_css %}{% endblock %}
 </head>
 
 <body>
-    <div class="container">
-        <div class="header">
-            <h1><i class="fas fa-file-invoice-dollar"></i> Bank Details Extractor</h1>
-            <p>Upload PDF documents to extract banking information automatically</p>
+    <header class="site-header">
+        <div class="container header-container">
+            <a href="/" class="logo">
+                <i class="fas fa-university"></i>
+                <span>BankDetails2CSV</span>
+            </a>
 
             {% if current_user %}
-            <div class="user-info">
+            <div class="user-info desktop-only">
                 <span class="user-name">{{ current_user.name }}</span>
-                <a href="/auth/logout" class="logout-btn">Logout</a>
+                <div class="nav-links">
+                    <a href="/" class="nav-link">Home</a>
+                    <a href="/header-config" class="nav-link">Header Config</a>
+                    <a href="/pricing" class="nav-link">Pricing</a>
+                    <a href="/auth/logout" class="logout-btn">
+                        <i class="fas fa-sign-out-alt"></i> Logout
+                    </a>
+                </div>
+            </div>
+
+            <div class="mobile-menu-toggle">
+                <i class="fas fa-user-circle"></i>
+            </div>
+
+            <div class="mobile-dropdown">
+                <div class="mobile-user-info">
+                    <span class="user-name">{{ current_user.name }}</span>
+                </div>
+                <div class="mobile-nav-links">
+                    <a href="/" class="mobile-nav-link">
+                        <i class="fas fa-home"></i> Home
+                    </a>
+                    <a href="/header-config" class="mobile-nav-link">
+                        <i class="fas fa-cog"></i> Header Config
+                    </a>
+                    <a href="/pricing" class="mobile-nav-link">
+                        <i class="fas fa-tags"></i> Pricing
+                    </a>
+                    <a href="/auth/logout" class="mobile-nav-link">
+                        <i class="fas fa-sign-out-alt"></i> Logout
+                    </a>
+                </div>
             </div>
             {% endif %}
         </div>
+    </header>
 
-        <div class="main-content">
+    <main class="main-content">
+        <div class="container">
             {% block content %}{% endblock %}
         </div>
-    </div>
+    </main>
 
-    <script src="{{ url_for('static', path='/js/main.js') }}"></script>
+    <footer class="site-footer">
+        <div class="container footer-content">
+            <div class="copyright">
+                &copy; 2023 BankDetails2CSV. All rights reserved.
+            </div>
+            <div class="footer-links">
+                <a href="/privacy" class="footer-link">Privacy</a>
+                <a href="/terms" class="footer-link">Terms</a>
+                <a href="/pricing" class="footer-link">Pricing</a>
+                <a href="mailto:contact@bankdetails2csv.com" class="footer-link">Contact</a>
+            </div>
+        </div>
+    </footer>
+
+    <script>
+        // Check for auth token in response headers
+        document.addEventListener('DOMContentLoaded', function () {
+            // Get auth token from response headers if present (after OAuth redirect)
+            const authToken = document.querySelector('meta[name="x-auth-token"]')?.getAttribute('content');
+            if (authToken) {
+                localStorage.setItem('auth_token', authToken);
+            }
+        });
+
+        // Mobile menu toggle functionality
+        document.addEventListener('DOMContentLoaded', function () {
+            const mobileMenuToggle = document.querySelector('.mobile-menu-toggle');
+            const mobileDropdown = document.querySelector('.mobile-dropdown');
+
+            if (mobileMenuToggle && mobileDropdown) {
+                mobileMenuToggle.addEventListener('click', function () {
+                    mobileDropdown.classList.toggle('active');
+                });
+
+                // Close dropdown when clicking outside
+                document.addEventListener('click', function (event) {
+                    if (!mobileMenuToggle.contains(event.target) && !mobileDropdown.contains(event.target)) {
+                        mobileDropdown.classList.remove('active');
+                    }
+                });
+            }
+        });
+    </script>
+
     {% block extra_js %}{% endblock %}
 </body>
 

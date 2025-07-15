@@ -1,0 +1,187 @@
+{% extends "base.html" %}
+
+{% block title %}Privacy Policy - BankDetails2CSV{% endblock %}
+
+{% block content %}
+<div class="container legal-page">
+    <div class="legal-header">
+        <h1>Privacy Policy</h1>
+        <p class="last-updated">Last updated: July 13, 2025</p>
+    </div>
+
+    <div class="legal-content">
+        <section class="legal-section">
+            <h2>1. Introduction</h2>
+            <p>At BankDetails2CSV, we respect your privacy and are committed to protecting your personal data. This
+                Privacy Policy explains how we collect, use, and safeguard your information when you use our service.
+            </p>
+            <p>Please read this Privacy Policy carefully. If you do not agree with the terms of this Privacy Policy,
+                please do not access the Service.</p>
+        </section>
+
+        <section class="legal-section">
+            <h2>2. Information We Collect</h2>
+            <p><strong>Personal Information:</strong> When you register for an account, we collect your name and email
+                address provided through your Google account.</p>
+            <p><strong>Usage Data:</strong> We collect information on how you interact with our Service, including
+                features used, time spent, and actions taken.</p>
+            <p><strong>Uploaded Documents:</strong> We process the documents you upload to extract bank details. These
+                documents may contain sensitive information.</p>
+        </section>
+
+        <section class="legal-section">
+            <h2>3. How We Use Your Information</h2>
+            <p><strong>To Provide the Service:</strong> We use your information to process documents, extract bank
+                details, and generate CSV files.</p>
+            <p><strong>Account Management:</strong> To create and maintain your account, authenticate your identity, and
+                provide customer support.</p>
+            <p><strong>Service Improvement:</strong> We analyze usage patterns to improve our features and user
+                experience.</p>
+            <p><strong>Communications:</strong> We may send you service-related emails and notifications.</p>
+        </section>
+
+        <section class="legal-section">
+            <h2>4. Document Processing and Storage</h2>
+            <p>Documents you upload are processed in real-time to extract bank details. We do not permanently store your
+                uploaded documents on our servers after processing is complete.</p>
+            <p>The extracted data is stored in your account until you choose to delete it or your account is terminated.
+            </p>
+        </section>
+
+        <section class="legal-section">
+            <h2>5. Data Security</h2>
+            <p>We implement appropriate security measures to protect your personal information against unauthorized
+                access, alteration, disclosure, or destruction.</p>
+            <p>All data transmission between your browser and our service is encrypted using SSL technology.</p>
+            <p>Despite our efforts, no method of transmission over the Internet or electronic storage is 100% secure,
+                and we cannot guarantee absolute security.</p>
+        </section>
+
+        <section class="legal-section">
+            <h2>6. Google Drive Integration</h2>
+            <p>If you choose to use our Google Drive integration, we request limited access to your Google Drive to save
+                exported files. We only access your Drive when you explicitly request us to export files.</p>
+            <p>You can revoke our access to your Google Drive at any time through your Google Account settings.</p>
+        </section>
+
+        <section class="legal-section">
+            <h2>7. Third-Party Services</h2>
+            <p>We may use third-party services to help us operate our service or administer activities on our behalf,
+                such as sending emails or analyzing usage data.</p>
+            <p>These third parties have access to your personal information only to perform these tasks on our behalf
+                and are obligated not to disclose or use it for any other purpose.</p>
+        </section>
+
+        <section class="legal-section">
+            <h2>8. Your Data Rights</h2>
+            <p>You have the right to:</p>
+            <ul>
+                <li>Access the personal information we hold about you</li>
+                <li>Request correction of your personal information</li>
+                <li>Request deletion of your personal information</li>
+                <li>Object to processing of your personal information</li>
+                <li>Request restriction of processing your personal information</li>
+                <li>Request transfer of your personal information</li>
+                <li>Withdraw consent where we rely on consent to process your information</li>
+            </ul>
+        </section>
+
+        <section class="legal-section">
+            <h2>9. Children's Privacy</h2>
+            <p>Our Service is not intended for use by children under the age of 13. We do not knowingly collect
+                personally identifiable information from children under 13.</p>
+        </section>
+
+        <section class="legal-section">
+            <h2>10. Changes to This Privacy Policy</h2>
+            <p>We may update our Privacy Policy from time to time. We will notify you of any changes by posting the new
+                Privacy Policy on this page and updating the "Last Updated" date.</p>
+            <p>You are advised to review this Privacy Policy periodically for any changes.</p>
+        </section>
+
+        <section class="legal-section">
+            <h2>11. Contact Us</h2>
+            <p>If you have any questions about this Privacy Policy, please contact us at privacy@bankdetails2csv.com.
+            </p>
+        </section>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_css %}
+<style>
+    .legal-page {
+        max-width: 800px;
+        margin: 0 auto;
+        padding: 2rem 0;
+    }
+
+    .legal-header {
+        margin-bottom: 2rem;
+        text-align: center;
+    }
+
+    .legal-header h1 {
+        font-size: 2.5rem;
+        margin-bottom: 0.5rem;
+    }
+
+    .last-updated {
+        color: var(--text-light);
+        font-style: italic;
+    }
+
+    .legal-content {
+        background-color: var(--card-bg);
+        border-radius: var(--radius);
+        box-shadow: var(--shadow);
+        padding: 2rem;
+    }
+
+    .legal-section {
+        margin-bottom: 2rem;
+    }
+
+    .legal-section:last-child {
+        margin-bottom: 0;
+    }
+
+    .legal-section h2 {
+        font-size: 1.5rem;
+        margin-bottom: 1rem;
+        color: var(--primary-color);
+    }
+
+    .legal-section p {
+        margin-bottom: 1rem;
+        line-height: 1.6;
+    }
+
+    .legal-section p:last-child {
+        margin-bottom: 0;
+    }
+
+    .legal-section ul {
+        margin-bottom: 1rem;
+        padding-left: 1.5rem;
+    }
+
+    .legal-section ul li {
+        margin-bottom: 0.5rem;
+    }
+
+    @media (max-width: 768px) {
+        .legal-content {
+            padding: 1.5rem;
+        }
+
+        .legal-header h1 {
+            font-size: 2rem;
+        }
+
+        .legal-section h2 {
+            font-size: 1.25rem;
+        }
+    }
+</style>
+{% endblock %}

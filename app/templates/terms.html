@@ -1,0 +1,154 @@
+{% extends "base.html" %}
+
+{% block title %}Terms of Service - BankDetails2CSV{% endblock %}
+
+{% block content %}
+<div class="container legal-page">
+    <div class="legal-header">
+        <h1>Terms of Service</h1>
+        <p class="last-updated">Last updated: July 13, 2025</p>
+    </div>
+
+    <div class="legal-content">
+        <section class="legal-section">
+            <h2>1. Acceptance of Terms</h2>
+            <p>By accessing or using BankDetails2CSV ("the Service"), you agree to be bound by these Terms of Service.
+                If you disagree with any part of the terms, you may not access the Service.</p>
+        </section>
+
+        <section class="legal-section">
+            <h2>2. Description of Service</h2>
+            <p>BankDetails2CSV provides tools for extracting bank details from documents and converting them to
+                structured formats like CSV. The Service uses artificial intelligence and machine learning to process
+                documents.</p>
+        </section>
+
+        <section class="legal-section">
+            <h2>3. User Accounts</h2>
+            <p>When you create an account with us, you must provide accurate information. You are responsible for
+                maintaining the security of your account and password. The company cannot and will not be liable for any
+                loss or damage from your failure to comply with this security obligation.</p>
+        </section>
+
+        <section class="legal-section">
+            <h2>4. Subscription and Payments</h2>
+            <p>Some features of the Service require payment. By selecting a paid plan, you agree to pay the subscription
+                fees indicated for that service. Payments are non-refundable except as required by law or at our sole
+                discretion.</p>
+            <p>We reserve the right to modify pricing with reasonable notice.</p>
+        </section>
+
+        <section class="legal-section">
+            <h2>5. Data Usage and Privacy</h2>
+            <p>Our Privacy Policy explains how we collect, use, and protect your personal data. By using our Service,
+                you agree to our Privacy Policy.</p>
+            <p>We do not store your uploaded documents beyond the processing time needed to extract information, unless
+                explicitly stated otherwise.</p>
+        </section>
+
+        <section class="legal-section">
+            <h2>6. User Content</h2>
+            <p>You retain all rights to your uploaded content. By uploading content, you grant us a license to use it
+                solely for the purpose of providing the Service to you.</p>
+            <p>You must not upload any content that infringes on intellectual property rights, contains malware, or
+                violates any applicable law.</p>
+        </section>
+
+        <section class="legal-section">
+            <h2>7. Limitation of Liability</h2>
+            <p>The Service is provided "as is" without warranties of any kind. In no event shall the company be liable
+                for any damages resulting from the use or inability to use the Service.</p>
+            <p>We do not guarantee the accuracy of information extracted from documents. Users should verify all
+                extracted information before use.</p>
+        </section>
+
+        <section class="legal-section">
+            <h2>8. Termination</h2>
+            <p>We may terminate or suspend access to our Service immediately, without prior notice or liability, for any
+                reason, including without limitation if you breach the Terms.</p>
+        </section>
+
+        <section class="legal-section">
+            <h2>9. Changes to Terms</h2>
+            <p>We reserve the right to modify these Terms at any time. We will provide notice of significant changes by
+                posting the new Terms on the Service and updating the "Last Updated" date.</p>
+            <p>Your continued use of the Service after such modifications constitutes your acceptance of the revised
+                Terms.</p>
+        </section>
+
+        <section class="legal-section">
+            <h2>10. Contact Us</h2>
+            <p>If you have any questions about these Terms, please contact us at support@bankdetails2csv.com.</p>
+        </section>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_css %}
+<style>
+    .legal-page {
+        max-width: 800px;
+        margin: 0 auto;
+        padding: 2rem 0;
+    }
+
+    .legal-header {
+        margin-bottom: 2rem;
+        text-align: center;
+    }
+
+    .legal-header h1 {
+        font-size: 2.5rem;
+        margin-bottom: 0.5rem;
+    }
+
+    .last-updated {
+        color: var(--text-light);
+        font-style: italic;
+    }
+
+    .legal-content {
+        background-color: var(--card-bg);
+        border-radius: var(--radius);
+        box-shadow: var(--shadow);
+        padding: 2rem;
+    }
+
+    .legal-section {
+        margin-bottom: 2rem;
+    }
+
+    .legal-section:last-child {
+        margin-bottom: 0;
+    }
+
+    .legal-section h2 {
+        font-size: 1.5rem;
+        margin-bottom: 1rem;
+        color: var(--primary-color);
+    }
+
+    .legal-section p {
+        margin-bottom: 1rem;
+        line-height: 1.6;
+    }
+
+    .legal-section p:last-child {
+        margin-bottom: 0;
+    }
+
+    @media (max-width: 768px) {
+        .legal-content {
+            padding: 1.5rem;
+        }
+
+        .legal-header h1 {
+            font-size: 2rem;
+        }
+
+        .legal-section h2 {
+            font-size: 1.25rem;
+        }
+    }
+</style>
+{% endblock %}

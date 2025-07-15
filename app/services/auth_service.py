@@ -10,13 +10,12 @@ from fastapi import Depends, HTTPException, status, Request
 from fastapi.security import OAuth2PasswordBearer
 from jose import JWTError, jwt
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.future import select
-from sqlalchemy import update
 
 from app.core.config import settings
-from app.db.database import get_db
+from app.db.database import get_async_db
 from app.db.models import User
 from app.models.user import UserCreate, UserDB, TokenData
+from app.db.adapter import db
 
 # OAuth setup
 oauth = OAuth()
@@ -35,42 +34,35 @@ oauth.register(
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token", auto_error=False)
 
 
-async def create_user(user_data: UserCreate, db: AsyncSession) -> User:
+async def create_user(user_data: UserCreate, db_session: AsyncSession) -> User:
     """
     Create a new user in the database
     
     Args:
         user_data: User data
-        db: Database session
+        db_session: Database session
         
     Returns:
         Created user
     """
     # Check if user already exists
-    result = await db.execute(select(User).where(User.email == user_data.email))
-    existing_user = result.scalar_one_or_none()
+    existing_user = db.get_user_by_email(user_data.email)
     
     if existing_user:
         # Update last login time
-        await db.execute(
-            update(User)
-            .where(User.id == existing_user.id)
-            .values(last_login=datetime.now())
-        )
-        await db.commit()
+        db.update_user(existing_user.id if hasattr(existing_user, 'id') else existing_user['id'], 
+                      {"last_login": datetime.now().isoformat()})
         return existing_user
     
     # Create new user
-    db_user = User(
-        email=user_data.email,
-        google_id=user_data.google_id,
-        name=user_data.name,
-        picture=user_data.picture,
-    )
-    db.add(db_user)
-    await db.commit()
-    await db.refresh(db_user)
-    return db_user
+    user_dict = {
+        "email": user_data.email,
+        "google_id": user_data.google_id,
+        "name": user_data.name,
+        "picture": user_data.picture,
+        "last_login": datetime.now().isoformat()
+    }
+    return db.create_user(user_dict)
 
 
 def create_access_token(data: Dict[str, Any], expires_delta: Optional[timedelta] = None) -> str:
@@ -96,13 +88,13 @@ def create_access_token(data: Dict[str, Any], expires_delta: Optional[timedelta]
     return encoded_jwt
 
 
-async def get_user_from_token(token: str, db: AsyncSession) -> Optional[User]:
+async def get_user_from_token(token: str, db_session: AsyncSession) -> Optional[User]:
     """
     Get user from token
     
     Args:
         token: JWT token
-        db: Database session
+        db_session: Database session
         
     Returns:
         User or None if token is invalid
@@ -113,9 +105,7 @@ async def get_user_from_token(token: str, db: AsyncSession) -> Optional[User]:
         if email is None:
             return None
         
-        result = await db.execute(select(User).where(User.email == email))
-        user = result.scalar_one_or_none()
-        return user
+        return db.get_user_by_email(email)
     except JWTError:
         return None
 
@@ -123,7 +113,7 @@ async def get_user_from_token(token: str, db: AsyncSession) -> Optional[User]:
 async def get_current_user(
     request: Request = None,
     token: str = Depends(oauth2_scheme), 
-    db: AsyncSession = Depends(get_db)
+    db_session: AsyncSession = Depends(get_async_db)
 ) -> Optional[User]:
     """
     Get current user from token or cookie
@@ -135,14 +125,14 @@ async def get_current_user(
     Args:
         request: FastAPI request (for cookie access)
         token: JWT token from Authorization header
-        db: Database session
+        db_session: Database session
         
     Returns:
         Current user or None if not authenticated
     """
     # First try to get token from Authorization header
     if token:
-        user = await get_user_from_token(token, db)
+        user = await get_user_from_token(token, db_session)
         if user:
             return user
     
@@ -150,7 +140,7 @@ async def get_current_user(
     if request:
         token = request.cookies.get("access_token")
         if token:
-            user = await get_user_from_token(token, db)
+            user = await get_user_from_token(token, db_session)
             if user:
                 return user
     
@@ -161,7 +151,7 @@ async def get_current_user(
 async def get_current_user_required(
     request: Request = None,
     token: str = Depends(oauth2_scheme), 
-    db: AsyncSession = Depends(get_db)
+    db_session: AsyncSession = Depends(get_async_db)
 ) -> User:
     """
     Get current user with required authentication
@@ -169,7 +159,7 @@ async def get_current_user_required(
     Args:
         request: FastAPI request (for cookie access)
         token: JWT token from Authorization header
-        db: Database session
+        db_session: Database session
         
     Returns:
         Current user
@@ -177,7 +167,7 @@ async def get_current_user_required(
     Raises:
         HTTPException: If user is not authenticated
     """
-    user = await get_current_user(request, token, db)
+    user = await get_current_user(request, token, db_session)
     if not user:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
