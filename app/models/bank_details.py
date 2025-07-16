@@ -9,6 +9,7 @@ import json
 
 class BankDetail(BaseModel):
     """Model for individual bank details"""
+    source_pdf: Optional[str] = None
     account_number: Optional[str] = None
     account_name: Optional[str] = None
     bank_name: Optional[str] = None

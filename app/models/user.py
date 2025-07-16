@@ -2,7 +2,7 @@
 User models for authentication
 """
 from datetime import datetime
-from typing import Optional, List
+from typing import Optional, List, Union
 from pydantic import BaseModel, EmailStr, Field
 
 
@@ -20,7 +20,7 @@ class UserCreate(UserBase):
 
 class UserDB(UserBase):
     """User database model"""
-    id: int
+    id: Union[int, str]  # Accept either integer or string ID
     google_id: str
     created_at: datetime = Field(default_factory=datetime.now)
     last_login: datetime = Field(default_factory=datetime.now)
@@ -31,7 +31,7 @@ class UserDB(UserBase):
 
 class UserResponse(UserBase):
     """User response model"""
-    id: int
+    id: Union[int, str]  # Accept either integer or string ID
 
     class Config:
         from_attributes = True

@@ -266,7 +266,7 @@ class GeminiService:
                 raise HTTPException(status_code=500, detail="No text response received from Gemini")
             
             # Parse the response
-            logger.debug(f"Parsing response text of length: {len(response.text)}")
+            logger.debug(f"Parsing response: {response.text}")
             json_data = self._parse_response(response.text)
             logger.debug(f"Parsed JSON data from response")
             return json_data

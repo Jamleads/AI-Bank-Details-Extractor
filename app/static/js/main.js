@@ -104,6 +104,10 @@ function initializeApp() {
     // Load header configurations
     loadHeaderConfigurations();
 
+    // Enable clear button
+    const clearBtn = document.getElementById('clear-button');
+    if (clearBtn) clearBtn.disabled = false;
+
     // Check session status to load any existing data
     checkSessionStatus();
 }
@@ -148,10 +152,11 @@ async function loadHeaderConfigurations() {
 }
 
 function setupFileUpload() {
-    const dropArea = document.getElementById('drop-area');
-    const fileInput = document.getElementById('file-input');
-    const fileList = document.getElementById('file-list');
-    const uploadButton = document.getElementById('upload-button');
+    // Get DOM elements
+    const fileInput = document.getElementById('fileInput');
+    const dropArea = document.getElementById('uploadArea');
+    const fileList = document.getElementById('fileList');
+    const uploadButton = document.getElementById('processBtn');
     const clearButton = document.getElementById('clear-button');
 
     if (!dropArea || !fileInput || !fileList || !uploadButton || !clearButton) {
@@ -181,22 +186,22 @@ function setupFileUpload() {
     fileInput.addEventListener('change', handleFileInputChange);
 
     // Handle upload button click
-    document.getElementById('upload-form').addEventListener('submit', function (e) {
+    uploadButton.addEventListener('click', function (e) {
         e.preventDefault();
         if (selectedFiles.length > 0) {
             uploadFiles(selectedFiles);
         }
     });
 
-    // Handle clear button click
-    clearButton.addEventListener('click', async function () {
-        if (confirm('Are you sure you want to clear all data? This will remove all uploaded files and extracted data.')) {
-            await clearAllData();
-        } else {
-            // Just clear the selected files without calling the backend
-            clearSelectedFiles();
-        }
-    });
+    // NOTE: Clear button event listener is now handled in index.html to avoid duplicate handlers
+    // clearButton.addEventListener('click', async function () {
+    //     if (confirm('Are you sure you want to clear all data? This will remove all uploaded files and extracted data.')) {
+    //         await clearAllData();
+    //     } else {
+    //         // Just clear the selected files without calling the backend
+    //         clearSelectedFiles();
+    //     }
+    // });
 
     function preventDefaults(e) {
         e.preventDefault();
@@ -342,10 +347,10 @@ function setupFileUpload() {
 // Global clearSelectedFiles function that can be called from anywhere
 function clearSelectedFiles() {
     selectedFiles = [];
-    const fileList = document.getElementById('file-list');
-    const uploadButton = document.getElementById('upload-button');
+    const fileList = document.getElementById('fileList');
+    const uploadButton = document.getElementById('processBtn');
     const clearButton = document.getElementById('clear-button');
-    const fileInput = document.getElementById('file-input');
+    const fileInput = document.getElementById('fileInput');
 
     if (fileList) fileList.innerHTML = '';
     if (uploadButton) uploadButton.disabled = true;
@@ -355,6 +360,9 @@ function clearSelectedFiles() {
 
 // Function to clear all data (call backend endpoint)
 async function clearAllData() {
+    // This function is kept for reference but is no longer used directly
+    // The clear button event handler is now implemented in index.html
+
     showStatusMessage('Clearing all data...', 'info');
     showProgressBar(true);
 
@@ -391,9 +399,12 @@ async function clearAllData() {
 
         const recordsDeleted = result.records_deleted || 0;
         showStatusMessage(`All data has been cleared successfully (${recordsDeleted} records deleted)`, 'success');
+
+        return result;
     } catch (error) {
         console.error('Error clearing data:', error);
         showStatusMessage(`Failed to clear data: ${error.message}`, 'error');
+        throw error; // Re-throw the error so the caller can handle it
     } finally {
         showProgressBar(false);
     }
@@ -598,7 +609,9 @@ async function updateSessionStatus() {
 
         if (downloadBtn) downloadBtn.disabled = !hasRecords;
         if (driveBtn) driveBtn.disabled = !hasRecords;
-        if (clearBtn) clearBtn.disabled = !hasRecords;
+
+        // Always enable the clear button
+        if (clearBtn) clearBtn.disabled = false;
 
         return status;
     } catch (error) {
@@ -689,7 +702,9 @@ async function checkSessionStatus() {
 
         if (downloadBtn) downloadBtn.disabled = !hasRecords;
         if (driveBtn) driveBtn.disabled = !hasRecords;
-        if (clearBtn) clearBtn.disabled = !hasRecords;
+
+        // Always enable the clear button
+        if (clearBtn) clearBtn.disabled = false;
 
         if (hasRecords) {
             showStatusMessage(`${status.total_records} records available for export`, 'success');

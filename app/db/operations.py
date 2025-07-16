@@ -112,6 +112,7 @@ async def save_raw_extraction(user_id: Union[int, str], filename: str, extractio
             "source_pdf": filename,
             "raw_json": extraction_data
         }
+
         result = db_adapter.create_raw_extraction(data)
         return {"success": True, "data": result}
     except Exception as e:
@@ -132,7 +133,7 @@ async def get_raw_extractions(user_id: Union[int, str], db = None):
 
 async def clear_user_session(user_id: Union[int, str], db = None):
     """
-    Clear user session data (delete all raw extractions)
+    Clear user session data (delete all raw extractions and bank records)
     
     Args:
         user_id: User ID
@@ -142,7 +143,14 @@ async def clear_user_session(user_id: Union[int, str], db = None):
         Dictionary with success status
     """
     try:
-        result = db_adapter.delete_raw_extractions_by_user(user_id)
-        return {"success": True, "records_deleted": result}
+        # Delete raw extractions
+        raw_extractions_deleted = db_adapter.delete_raw_extractions_by_user(user_id)
+        
+        # Delete bank records
+        bank_records_deleted = db_adapter.delete_bank_records_by_user(user_id)
+        
+        total_deleted = raw_extractions_deleted + bank_records_deleted
+        
+        return {"success": True, "records_deleted": total_deleted}
     except Exception as e:
         return {"success": False, "error": str(e)} 

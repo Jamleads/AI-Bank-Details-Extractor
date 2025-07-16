@@ -237,39 +237,14 @@ async def extract_bank_details(
                             # Extract bank details with Gemini
                             logger.debug(f"Calling Gemini API for file {extracted_filename}")
                             json_data = gemini_service.extract_bank_details(extracted_data, extracted_ext, header_config)
-                            logger.debug(f"Gemini API returned JSON data for file {extracted_filename}")
+                            logger.debug(f"Gemini API returned JSON data for file {json_data}")
                             
                             # Save raw extraction data
                             logger.debug(f"Saving raw extraction data for file {extracted_filename}")
                             raw_result = await save_raw_extraction(get_user_id(current_user), extracted_filename, json_data)
                             if not raw_result['success']:
                                 logger.warning(f"Failed to save raw extraction data: {raw_result.get('error')}")
-                            
-                            # Check if bank_details exists in the response
-                            bank_details = []
-                            if "bank_details" in json_data and isinstance(json_data["bank_details"], list):
-                                # Convert the raw JSON bank_details to BankDetail objects
-                                bank_details = [BankDetail(**item) for item in json_data["bank_details"]]
-                                # Add source_pdf to each bank detail
-                                for detail in bank_details:
-                                    if hasattr(detail, 'model_dump'):
-                                        detail_dict = detail.model_dump()
-                                        detail_dict["source_pdf"] = extracted_filename
-                                        detail = BankDetail(**detail_dict)
-                                    elif hasattr(detail, 'dict'):
-                                        detail_dict = detail.dict()
-                                        detail_dict["source_pdf"] = extracted_filename
-                                        detail = BankDetail(**detail_dict)
-                                logger.debug(f"Converted {len(bank_details)} bank details from JSON data")
-                            else:
-                                logger.warning(f"No bank_details field found in JSON response for file {extracted_filename}")
-                            
-                            # Save to database
-                            logger.debug(f"Saving {len(bank_details)} records to database for file {extracted_filename}")
-                            result = await save_bank_details(get_user_id(current_user), bank_details)
-                            zip_records_added += result.get('records_added', 0)
-                            logger.debug(f"Added {result.get('records_added', 0)} records to database for file {extracted_filename}")
-                            
+
                             # Add results to response - include the full JSON data
                             zip_results.append({
                                 "source_pdf": extracted_filename,
@@ -298,35 +273,10 @@ async def extract_bank_details(
                     logger.debug(f"Gemini API returned JSON data for file {filename}")
                     
                     # Save raw extraction data
-                    logger.debug(f"Saving raw extraction data for file {filename}")
+                    logger.debug(f"Saving raw extraction data for file {filename} and data \n\n {json_data}")
                     raw_result = await save_raw_extraction(get_user_id(current_user), filename, json_data)
                     if not raw_result['success']:
                         logger.warning(f"Failed to save raw extraction data: {raw_result.get('error')}")
-                    
-                    # Check if bank_details exists in the response
-                    bank_details = []
-                    if "bank_details" in json_data and isinstance(json_data["bank_details"], list):
-                        # Convert the raw JSON bank_details to BankDetail objects
-                        bank_details = [BankDetail(**item) for item in json_data["bank_details"]]
-                        # Add source_pdf to each bank detail
-                        for detail in bank_details:
-                            if hasattr(detail, 'model_dump'):
-                                detail_dict = detail.model_dump()
-                                detail_dict["source_pdf"] = filename
-                                detail = BankDetail(**detail_dict)
-                            elif hasattr(detail, 'dict'):
-                                detail_dict = detail.dict()
-                                detail_dict["source_pdf"] = filename
-                                detail = BankDetail(**detail_dict)
-                        logger.debug(f"Converted {len(bank_details)} bank details from JSON data")
-                    else:
-                        logger.warning(f"No bank_details field found in JSON response for file {filename}")
-                    
-                    # Save to database
-                    logger.debug(f"Saving {len(bank_details)} records to database for file {filename}")
-                    result = await save_bank_details(get_user_id(current_user), bank_details)
-                    total_records_added += result.get('records_added', 0)
-                    logger.debug(f"Added {result.get('records_added', 0)} records to database for file {filename}")
                     
                     # Add results to response - include the full JSON data
                     all_results.append({

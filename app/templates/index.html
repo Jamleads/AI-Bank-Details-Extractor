@@ -36,7 +36,7 @@
             <div id="fileList" class="file-list"></div>
             <div class="upload-controls">
                 <button type="button" id="processBtn" class="btn btn-primary" disabled>Process Files</button>
-                <button type="button" id="clearBtn" class="btn btn-secondary" disabled>Clear All Data</button>
+                <button type="button" id="clear-button" class="btn btn-secondary" disabled>Clear All Data</button>
             </div>
         </form>
     </div>
@@ -126,6 +126,7 @@
 {% endblock %}
 
 {% block extra_js %}
+<script src="{{ url_for('static', path='js/main.js') }}"></script>
 <script>
     // Check for auth token in meta tag
     document.addEventListener('DOMContentLoaded', function () {
@@ -148,8 +149,66 @@
         const uploadArea = document.getElementById('uploadArea');
         const fileList = document.getElementById('fileList');
         const processBtn = document.getElementById('processBtn');
-        const clearBtn = document.getElementById('clearBtn');
+        let clearBtn = document.getElementById('clear-button'); // Initialize clearBtn
         let uploadedFiles = [];
+
+        // Make sure clear button is enabled
+        if (clearBtn) clearBtn.disabled = false;
+
+        // Simple clear button implementation - no cloning to avoid recursion issues
+        let clearButtonClicked = false; // Flag to prevent multiple clicks
+        clearBtn.addEventListener('click', function (e) {
+            // Prevent default behavior
+            e.preventDefault();
+
+            // Prevent multiple clicks
+            if (clearButtonClicked) return;
+
+            if (confirm('Are you sure you want to clear all data? This will remove all uploaded files and extracted data.')) {
+                // Set flag to prevent multiple clicks
+                clearButtonClicked = true;
+
+                // Show loading state
+                clearBtn.disabled = true;
+                clearBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Clearing...';
+
+                // Clear UI elements first
+                fileInput.value = '';
+                uploadedFiles = [];
+                fileList.innerHTML = '';
+                updateButtonStates();
+                hideResults();
+
+                // Call API to clear session data
+                fetch('/api/clear-session', {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${authToken}`
+                    }
+                })
+                    .then(response => {
+                        if (!response.ok) {
+                            return response.json().then(data => {
+                                throw new Error(data.detail || `Error: ${response.status}`);
+                            });
+                        }
+                        return response.json();
+                    })
+                    .then(() => {
+                        alert('All data has been cleared successfully');
+                    })
+                    .catch(error => {
+                        console.error('Error clearing data:', error);
+                        alert(`Failed to clear data: ${error.message}`);
+                    })
+                    .finally(() => {
+                        // Reset button state
+                        clearBtn.innerHTML = 'Clear All Data';
+                        clearBtn.disabled = false;
+                        clearButtonClicked = false;
+                    });
+            }
+        });
 
         // Handle drag and drop events
         ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
@@ -331,39 +390,40 @@
         });
 
         // Clear button - clears all data including previously processed files
-        clearBtn.addEventListener('click', function () {
-            if (confirm('Are you sure you want to clear all data? This will remove all uploaded files and extracted data.')) {
-                // Clear current files
-                fileInput.value = '';
-                uploadedFiles = [];
-                fileList.innerHTML = '';
-                updateButtonStates();
+        // This event listener is being removed as it conflicts with the one in main.js
+        // clearBtn.addEventListener('click', function () {
+        //     if (confirm('Are you sure you want to clear all data? This will remove all uploaded files and extracted data.')) {
+        //         // Clear current files
+        //         fileInput.value = '';
+        //         uploadedFiles = [];
+        //         fileList.innerHTML = '';
+        //         updateButtonStates();
 
-                // Call API to clear session data
-                fetch('/api/clear-session', {
-                    method: 'POST',
-                    headers: {
-                        'Authorization': `Bearer ${authToken}`
-                    }
-                })
-                    .then(response => {
-                        if (!response.ok) {
-                            return response.json().then(data => {
-                                throw new Error(data.detail || `Error: ${response.status}`);
-                            });
-                        }
-                        return response.json();
-                    })
-                    .then(() => {
-                        alert('All data has been cleared successfully');
-                        hideResults();
-                    })
-                    .catch(error => {
-                        console.error('Error clearing data:', error);
-                        alert(`Failed to clear data: ${error.message}`);
-                    });
-            }
-        });
+        //         // Call API to clear session data
+        //         fetch('/api/clear-session', {
+        //             method: 'POST',
+        //             headers: {
+        //                 'Authorization': `Bearer ${authToken}`
+        //             }
+        //         })
+        //             .then(response => {
+        //                 if (!response.ok) {
+        //                     return response.json().then(data => {
+        //                         throw new Error(data.detail || `Error: ${response.status}`);
+        //                     });
+        //                 }
+        //                 return response.json();
+        //             })
+        //             .then(() => {
+        //                 alert('All data has been cleared successfully');
+        //                 hideResults();
+        //             })
+        //             .catch(error => {
+        //                 console.error('Error clearing data:', error);
+        //                 alert(`Failed to clear data: ${error.message}`);
+        //             });
+        //     }
+        // });
 
         // Export buttons
         document.getElementById('exportCsvBtn').addEventListener('click', function () {

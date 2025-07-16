@@ -670,8 +670,14 @@ class DynamoDBService:
             return 0
             
         # Extract the keys (id) from each extraction
-        keys = [{'id': extraction['id']} for extraction in extractions]
+        keys = []
+        for extraction in extractions:
+            if 'id' in extraction:
+                keys.append({'id': extraction['id']})
         
+        if not keys:
+            return 0
+            
         # Execute batch delete
         return self._execute_batch_delete(RAW_EXTRACTIONS_TABLE, keys)
 
