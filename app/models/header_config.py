@@ -2,7 +2,7 @@
 Models for header configuration
 """
 from datetime import datetime
-from typing import Dict, Optional
+from typing import Dict, Optional, Union
 from pydantic import BaseModel, Field
 
 
@@ -29,8 +29,8 @@ class HeaderConfigUpdate(BaseModel):
 
 class HeaderConfigResponse(HeaderConfigBase):
     """Response model for a header configuration"""
-    id: int
-    user_id: int
+    id: Union[int, str]
+    user_id: Union[int, str]
 
     class Config:
         """Pydantic config"""
@@ -39,8 +39,8 @@ class HeaderConfigResponse(HeaderConfigBase):
 
 class HeaderConfig(HeaderConfigBase):
     """Model for a header configuration"""
-    id: int
-    user_id: int
+    id: Union[int, str]
+    user_id: Union[int, str]
     created_at: datetime
     updated_at: datetime
 

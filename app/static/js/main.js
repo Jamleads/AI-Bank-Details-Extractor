@@ -363,7 +363,8 @@ async function clearAllData() {
         const response = await fetch('/api/clear-session', {
             method: 'POST',
             headers: {
-                'Authorization': `Bearer ${token}`
+                'Authorization': `Bearer ${token}`,
+                'Content-Type': 'application/json'
             }
         });
 
@@ -372,13 +373,24 @@ async function clearAllData() {
             throw new Error(errorData.detail || `HTTP error! Status: ${response.status}`);
         }
 
+        const result = await response.json();
+        console.log("Clear session result:", result);
+
         // Clear selected files
         clearSelectedFiles();
+
+        // Clear stored data
+        rawExtractions = [];
+        structuredRecords = [];
 
         // Update session status to refresh UI
         await updateSessionStatus();
 
-        showStatusMessage('All data has been cleared successfully', 'success');
+        // Update extraction results display
+        updateExtractionResults();
+
+        const recordsDeleted = result.records_deleted || 0;
+        showStatusMessage(`All data has been cleared successfully (${recordsDeleted} records deleted)`, 'success');
     } catch (error) {
         console.error('Error clearing data:', error);
         showStatusMessage(`Failed to clear data: ${error.message}`, 'error');
@@ -700,9 +712,9 @@ function downloadExport() {
     let url = '';
 
     if (format === 'json') {
-        url = `/download-json?use_raw=${isRawData}`;
+        url = `/api/download-json?use_raw=${isRawData}`;
     } else {
-        url = `/download-csv?format=${format}&use_raw=${isRawData}`;
+        url = `/api/download-csv?format=${format}&use_raw=${isRawData}`;
 
         if (headerConfigId) {
             url += `&config_id=${headerConfigId}`;

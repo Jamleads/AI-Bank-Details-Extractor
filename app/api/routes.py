@@ -493,11 +493,11 @@ async def clear_session(
         Success message
     """
     try:
-        success = await clear_user_session(get_user_id(current_user), db)
-        if success:
-            return {"success": True}
+        result = await clear_user_session(get_user_id(current_user), db)
+        if result.get("success", False):
+            return {"success": True, "records_deleted": result.get("records_deleted", 0)}
         else:
-            raise HTTPException(status_code=500, detail="Failed to clear session")
+            raise HTTPException(status_code=500, detail=result.get("error", "Failed to clear session"))
     except Exception as e:
         logger.error(f"Error in clear-session endpoint: {str(e)}")
         logger.error(traceback.format_exc())
@@ -628,47 +628,81 @@ async def download_csv(
                 if not header_config:
                     logger.warning(f"Header configuration with ID {config_id} not found")
                     raise HTTPException(status_code=404, detail="Header configuration not found")
-                logger.debug(f"Using header config: {header_config.name}, mappings: {header_config.header_mappings}")
+                
+                # Handle header_config as either object or dict
+                config_name = header_config.name if hasattr(header_config, 'name') else header_config.get('name', 'Unknown')
+                config_mappings = header_config.header_mappings if hasattr(header_config, 'header_mappings') else header_config.get('header_mappings', {})
+                logger.debug(f"Using header config: {config_name}, mappings: {config_mappings}")
             else:
                 # Use default config
                 logger.debug("No config_id provided, using default config")
                 header_config = await ensure_default_config(get_user_id(current_user), db)
-                logger.debug(f"Using default config: {header_config.name}, mappings: {header_config.header_mappings}")
+                
+                # Handle header_config as either object or dict
+                config_name = header_config.name if hasattr(header_config, 'name') else header_config.get('name', 'Default')
+                config_mappings = header_config.header_mappings if hasattr(header_config, 'header_mappings') else header_config.get('header_mappings', {})
+                logger.debug(f"Using default config: {config_name}, mappings: {config_mappings}")
             
             # Override format if specified in config
-            if format == "csv" and header_config.file_format != "csv":
-                logger.debug(f"Overriding format from {format} to {header_config.file_format}")
-                format = header_config.file_format
+            config_format = header_config.file_format if hasattr(header_config, 'file_format') else header_config.get('file_format', 'csv')
+            if format == "csv" and config_format != "csv":
+                logger.debug(f"Overriding format from {format} to {config_format}")
+                format = config_format
             
             # Convert records to dict
             records_dict = []
             for record in records:
-                records_dict.append({
-                    'source_pdf': record.source_pdf,
-                    'extraction_date': record.extraction_date.strftime('%Y-%m-%d %H:%M:%S'),
-                    'account_number': record.account_number,
-                    'account_name': record.account_name,
-                    'bank_name': record.bank_name,
-                    'sort_code': record.sort_code,
-                    'iban': record.iban,
-                    'swift_code': record.swift_code,
-                    'routing_number': record.routing_number,
-                    'bsb_code': record.bsb_code,
-                    'branch_code': record.branch_code,
-                    'branch_address': record.branch_address,
-                    'account_type': record.account_type,
-                    'currency': record.currency,
-                    'balance': record.balance,
-                    'other_details': record.other_details
-                })
+                # Check if record is a dict or an object
+                if isinstance(record, dict):
+                    # It's already a dict (from DynamoDB)
+                    record_dict = {
+                        'source_pdf': record.get('source_pdf', ''),
+                        'extraction_date': record.get('extraction_date', str(datetime.now())),
+                        'account_number': record.get('account_number'),
+                        'account_name': record.get('account_name'),
+                        'bank_name': record.get('bank_name'),
+                        'sort_code': record.get('sort_code'),
+                        'iban': record.get('iban'),
+                        'swift_code': record.get('swift_code'),
+                        'routing_number': record.get('routing_number'),
+                        'bsb_code': record.get('bsb_code'),
+                        'branch_code': record.get('branch_code'),
+                        'branch_address': record.get('branch_address'),
+                        'account_type': record.get('account_type'),
+                        'currency': record.get('currency'),
+                        'balance': record.get('balance'),
+                        'other_details': record.get('other_details')
+                    }
+                else:
+                    # It's an object (from SQLite)
+                    extraction_date = record.extraction_date.strftime('%Y-%m-%d %H:%M:%S') if hasattr(record, 'extraction_date') and record.extraction_date else str(datetime.now())
+                    record_dict = {
+                        'source_pdf': record.source_pdf if hasattr(record, 'source_pdf') else '',
+                        'extraction_date': extraction_date,
+                        'account_number': record.account_number if hasattr(record, 'account_number') else None,
+                        'account_name': record.account_name if hasattr(record, 'account_name') else None,
+                        'bank_name': record.bank_name if hasattr(record, 'bank_name') else None,
+                        'sort_code': record.sort_code if hasattr(record, 'sort_code') else None,
+                        'iban': record.iban if hasattr(record, 'iban') else None,
+                        'swift_code': record.swift_code if hasattr(record, 'swift_code') else None,
+                        'routing_number': record.routing_number if hasattr(record, 'routing_number') else None,
+                        'bsb_code': record.bsb_code if hasattr(record, 'bsb_code') else None,
+                        'branch_code': record.branch_code if hasattr(record, 'branch_code') else None,
+                        'branch_address': record.branch_address if hasattr(record, 'branch_address') else None,
+                        'account_type': record.account_type if hasattr(record, 'account_type') else None,
+                        'currency': record.currency if hasattr(record, 'currency') else None,
+                        'balance': record.balance if hasattr(record, 'balance') else None,
+                        'other_details': record.other_details if hasattr(record, 'other_details') else None
+                    }
+                records_dict.append(record_dict)
             
             # Apply header mapping
-            mapped_records = apply_header_mapping(records_dict, header_config.header_mappings)
+            mapped_records = apply_header_mapping(records_dict, config_mappings)
             
             # Get custom headers string if provided in header config
             custom_headers = None
-            if header_config.header_mappings:
-                custom_headers = ','.join(header_config.header_mappings.values())
+            if config_mappings:
+                custom_headers = ','.join(config_mappings.values())
             
             # Generate file based on format
             if format.lower() == "xlsx":

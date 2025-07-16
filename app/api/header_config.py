@@ -2,7 +2,7 @@
 Header configuration API routes
 """
 import logging
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any, Optional, Union
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.db.database import get_async_db
@@ -48,7 +48,7 @@ async def create_config(
         Created header configuration
     """
     try:
-        return await create_header_config(config, get_user_id(current_user), db)
+        return await create_header_config(get_user_id(current_user), config.dict())
     except Exception as e:
         logger.error(f"Error creating header config: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
@@ -101,7 +101,7 @@ async def get_default_config(
 
 @router.get("/{config_id}", response_model=HeaderConfigResponse)
 async def get_config(
-    config_id: int,
+    config_id: Union[int, str],
     db: AsyncSession = Depends(get_async_db),
     current_user: UserDB = Depends(get_current_user_required)
 ):
@@ -130,7 +130,7 @@ async def get_config(
 
 @router.put("/{config_id}", response_model=HeaderConfigResponse)
 async def update_config(
-    config_id: int,
+    config_id: Union[int, str],
     config_update: HeaderConfigUpdate,
     db: AsyncSession = Depends(get_async_db),
     current_user: UserDB = Depends(get_current_user_required)
@@ -148,7 +148,9 @@ async def update_config(
         Updated header configuration
     """
     try:
-        config = await update_header_config(config_id, config_update, get_user_id(current_user), db)
+        # Convert to dict for compatibility with both SQLite and DynamoDB
+        update_data = config_update.dict(exclude_unset=True)
+        config = await update_header_config(config_id, update_data, db)
         if not config:
             raise HTTPException(status_code=404, detail="Header configuration not found")
         return config
@@ -161,7 +163,7 @@ async def update_config(
 
 @router.delete("/{config_id}")
 async def delete_config(
-    config_id: int,
+    config_id: Union[int, str],
     db: AsyncSession = Depends(get_async_db),
     current_user: UserDB = Depends(get_current_user_required)
 ):
@@ -177,7 +179,7 @@ async def delete_config(
         Success message
     """
     try:
-        success = await delete_header_config(config_id, get_user_id(current_user), db)
+        success = await delete_header_config(config_id, db)
         if not success:
             raise HTTPException(status_code=404, detail="Header configuration not found")
         return {"success": True, "message": "Header configuration deleted successfully"}

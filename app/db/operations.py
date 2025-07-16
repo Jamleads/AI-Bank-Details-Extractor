@@ -139,6 +139,10 @@ async def clear_user_session(user_id: Union[int, str], db = None):
         db: Database session (optional, for compatibility)
         
     Returns:
-        Number of records deleted
+        Dictionary with success status
     """
-    return db_adapter.delete_raw_extractions_by_user(user_id) 
+    try:
+        result = db_adapter.delete_raw_extractions_by_user(user_id)
+        return {"success": True, "records_deleted": result}
+    except Exception as e:
+        return {"success": False, "error": str(e)} 
