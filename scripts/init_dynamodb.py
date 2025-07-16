@@ -10,7 +10,7 @@ import logging
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from app.core.config import settings
-from app.db.adapter import db_adapter
+from app.db.adapter import db
 from app.db.dynamodb import dynamodb_service
 
 # Configure logging

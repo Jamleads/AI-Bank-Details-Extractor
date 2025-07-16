@@ -250,4 +250,4 @@ async def export_to_drive(
         raise
     except Exception as e:
         logger.error(f"Error in export to Drive endpoint: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e)) 
+        raise HTTPException(status_code=500, detail=str(e))

@@ -43,6 +43,11 @@ class GoogleDriveService:
         """
         try:
             # Create OAuth 2.0 flow
+            f = Flow.from_client_config(
+                client_config=CREDENTIALS_FILE,
+                scopes=SCOPES,
+                redirect_uri=request.url_for('drive_callback')
+            )
             flow = Flow.from_client_secrets_file(
                 CREDENTIALS_FILE,
                 scopes=SCOPES,
@@ -101,34 +106,29 @@ class GoogleDriveService:
     @staticmethod
     def store_credentials(user_id: int, credentials: Credentials) -> None:
         """
-        Store Google Drive credentials for a user
+        Store Google Drive credentials for a user in the database
         
         Args:
             user_id: User ID
             credentials: Google OAuth credentials
         """
         try:
-            # Create credentials directory if it doesn't exist
-            credentials_dir = os.path.join(settings.BASE_DIR, 'user_credentials')
-            os.makedirs(credentials_dir, exist_ok=True)
+            from app.db.adapter import db
             
-            # Store credentials in a file
-            credentials_path = os.path.join(credentials_dir, f'drive_credentials_{user_id}.json')
-            
-            # Convert credentials to dict and then to JSON
+            # Convert credentials to dict
             creds_dict = {
                 'token': credentials.token,
                 'refresh_token': credentials.refresh_token,
                 'token_uri': credentials.token_uri,
-                'client_id': credentials.client_id,
-                'client_secret': credentials.client_secret,
+                # 'client_id': credentials.client_id,
+                # 'client_secret': credentials.client_secret,
                 'scopes': credentials.scopes
             }
             
-            with open(credentials_path, 'w') as f:
-                json.dump(creds_dict, f)
+            # Store credentials in database
+            db.store_user_credentials(user_id, 'google_drive', creds_dict)
             
-            logger.debug(f"Stored Google Drive credentials for user {user_id}")
+            logger.debug(f"Stored Google Drive credentials for user {user_id} in database")
         except Exception as e:
             logger.error(f"Error storing Google Drive credentials: {str(e)}")
             raise HTTPException(status_code=500, detail=f"Failed to store Google Drive credentials: {str(e)}")
@@ -136,7 +136,7 @@ class GoogleDriveService:
     @staticmethod
     def get_stored_credentials(user_id: int) -> Optional[Credentials]:
         """
-        Get stored Google Drive credentials for a user
+        Get stored Google Drive credentials for a user from the database
         
         Args:
             user_id: User ID
@@ -145,23 +145,23 @@ class GoogleDriveService:
             Google OAuth credentials or None if not found
         """
         try:
-            # Check if credentials file exists
-            credentials_path = os.path.join(settings.BASE_DIR, 'user_credentials', f'drive_credentials_{user_id}.json')
-            if not os.path.exists(credentials_path):
+            from app.db.adapter import db
+            
+            # Get credentials from database
+            creds_record = db.get_user_credentials(user_id, 'google_drive')
+            if not creds_record:
                 return None
             
-            # Load credentials from file
-            with open(credentials_path, 'r') as f:
-                creds_dict = json.load(f)
+            creds_dict = creds_record.get('credentials', {})
             
             # Create credentials object
             credentials = Credentials(
-                token=creds_dict['token'],
-                refresh_token=creds_dict['refresh_token'],
-                token_uri=creds_dict['token_uri'],
-                client_id=creds_dict['client_id'],
-                client_secret=creds_dict['client_secret'],
-                scopes=creds_dict['scopes']
+                token=creds_dict.get('token'),
+                refresh_token=creds_dict.get('refresh_token'),
+                token_uri=creds_dict.get('token_uri'),
+                client_id=creds_dict.get('client_id'),
+                client_secret=creds_dict.get('client_secret'),
+                scopes=creds_dict.get('scopes', [])
             )
             
             # Check if credentials are valid

@@ -390,6 +390,55 @@ class DatabaseAdapter:
                 payment_method
             )
 
+    # User credentials operations
+    def store_user_credentials(self, user_id: Union[int, str], credential_type: str, credentials: Dict[str, Any]):
+        """Store user credentials"""
+        if self.db_type == "sqlite":
+            # For SQLite, we would need to create a model and table for credentials
+            # For now, we'll just log a warning and use DynamoDB
+            logger.warning("Storing credentials in SQLite is not implemented, using DynamoDB instead")
+            from app.db.dynamodb import dynamodb_service
+            if isinstance(user_id, int):
+                user_id = str(user_id)
+            return dynamodb_service.store_user_credentials(user_id, credential_type, credentials)
+        else:
+            # Convert user_id to string for DynamoDB
+            if isinstance(user_id, int):
+                user_id = str(user_id)
+            return self._db_provider.store_user_credentials(user_id, credential_type, credentials)
+
+    def get_user_credentials(self, user_id: Union[int, str], credential_type: str):
+        """Get user credentials"""
+        if self.db_type == "sqlite":
+            # For SQLite, we would need to create a model and table for credentials
+            # For now, we'll just log a warning and use DynamoDB
+            logger.warning("Getting credentials from SQLite is not implemented, using DynamoDB instead")
+            from app.db.dynamodb import dynamodb_service
+            if isinstance(user_id, int):
+                user_id = str(user_id)
+            return dynamodb_service.get_user_credentials(user_id, credential_type)
+        else:
+            # Convert user_id to string for DynamoDB
+            if isinstance(user_id, int):
+                user_id = str(user_id)
+            return self._db_provider.get_user_credentials(user_id, credential_type)
+
+    def delete_user_credentials(self, user_id: Union[int, str], credential_type: str):
+        """Delete user credentials"""
+        if self.db_type == "sqlite":
+            # For SQLite, we would need to create a model and table for credentials
+            # For now, we'll just log a warning and use DynamoDB
+            logger.warning("Deleting credentials from SQLite is not implemented, using DynamoDB instead")
+            from app.db.dynamodb import dynamodb_service
+            if isinstance(user_id, int):
+                user_id = str(user_id)
+            return dynamodb_service.delete_user_credentials(user_id, credential_type)
+        else:
+            # Convert user_id to string for DynamoDB
+            if isinstance(user_id, int):
+                user_id = str(user_id)
+            return self._db_provider.delete_user_credentials(user_id, credential_type)
+
 
 # Create a singleton instance
 db = DatabaseAdapter()

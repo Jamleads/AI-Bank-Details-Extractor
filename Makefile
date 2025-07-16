@@ -1,4 +1,4 @@
-.PHONY: help setup-env start-db stop-db check-db init-db start-app start-all clean
+.PHONY: help setup-env start-db stop-db check-db init-db start-app start-all clean test-dynamodb migrate-credentials test-credentials
 
 # Default target
 help:
@@ -10,6 +10,9 @@ help:
 	@echo "  make init-db          - Initialize DynamoDB tables"
 	@echo "  make start-app        - Start the FastAPI application"
 	@echo "  make start-all        - Start DynamoDB and the application"
+	@echo "  make test-dynamodb    - Run tests for DynamoDB functions"
+	@echo "  make test-credentials - Test credentials storage in DynamoDB"
+	@echo "  make migrate-credentials - Migrate credentials from files to database"
 	@echo "  make clean            - Remove virtual environment and Docker volumes"
 
 # Setup environment
@@ -42,6 +45,15 @@ init-db: start-db
 	sleep 2  # Wait for DynamoDB to be fully ready
 	. venv/bin/activate && python scripts/init_dynamodb.py
 
+# Test DynamoDB functions
+test-dynamodb: start-db
+	@echo "Testing DynamoDB functions..."
+	sleep 2  # Wait for DynamoDB to be fully ready
+	@echo "Setting up test environment..."
+	DYNAMODB_TABLE_PREFIX=test_ . venv/bin/activate && python scripts/init_dynamodb.py
+	@echo "Running DynamoDB tests..."
+	DYNAMODB_TABLE_PREFIX=test_ . venv/bin/activate && python scripts/test_dynamodb.py
+
 # Start the application
 start-app:
 	@echo "Starting FastAPI application..."
@@ -60,3 +72,20 @@ clean:
 	rm -rf venv
 	rm -rf dynamodb-data
 	@echo "Cleanup complete" 
+
+# Migrate credentials
+migrate-credentials: start-db
+	@echo "Migrating credentials from files to database..."
+	sleep 2  # Wait for DynamoDB to be fully ready
+	DYNAMODB_TABLE_PREFIX= . venv/bin/activate && python scripts/init_dynamodb.py
+	@echo "Running credential migration..."
+	DYNAMODB_TABLE_PREFIX= . venv/bin/activate && python scripts/migrate_credentials.py 
+
+# Test credentials storage
+test-credentials: start-db
+	@echo "Testing credentials storage in DynamoDB..."
+	sleep 2  # Wait for DynamoDB to be fully ready
+	@echo "Setting up test environment..."
+	DYNAMODB_TABLE_PREFIX=test_ . venv/bin/activate && python scripts/init_dynamodb.py
+	@echo "Running credentials tests..."
+	DYNAMODB_TABLE_PREFIX=test_ . venv/bin/activate && python scripts/test_credentials_storage.py 
