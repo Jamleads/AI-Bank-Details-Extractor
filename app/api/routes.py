@@ -339,87 +339,36 @@ async def get_session_status(
         SessionStatus with current session information
     """
     try:
-        # Get processed files
-        processed_files = await get_processed_files(get_user_id(current_user), db)
-        
-        # Get total records
-        total_records = await count_user_records(get_user_id(current_user), db)
-        
-        # Get all records
-        records = await get_user_records(get_user_id(current_user), db)
-        
         # Get raw extractions
         raw_extractions = await get_raw_extractions(get_user_id(current_user), db)
-        
         # Convert records to dict for response
         results = []
-        for record in records:
-            # Check if record is a dict or an object
-            if isinstance(record, dict):
-                # It's already a dict (from DynamoDB)
+        for record in raw_extractions:
+        
+            for bank_detail in record.get('raw_data', {}).get('bank_details', []):
                 result_dict = {
                     'source_pdf': record.get('source_pdf', ''),
-                    'account_number': record.get('account_number'),
-                    'account_name': record.get('account_name'),
-                    'bank_name': record.get('bank_name'),
-                    'sort_code': record.get('sort_code'),
-                    'iban': record.get('iban'),
-                    'swift_code': record.get('swift_code'),
-                    'routing_number': record.get('routing_number'),
-                    'bsb_code': record.get('bsb_code'),
-                    'branch_code': record.get('branch_code'),
-                    'branch_address': record.get('branch_address'),
-                    'account_type': record.get('account_type'),
-                    'currency': record.get('currency'),
-                    'balance': record.get('balance'),
-                    'other_details': record.get('other_details'),
-                    # Add a flag to indicate this is a structured record from the database
+                    'account_number': bank_detail.get('account_number'),
+                    'account_name': bank_detail.get('account_name'),
+                    'bank_name': bank_detail.get('bank_name'),
+                    'sort_code': bank_detail.get('sort_code'),
+                    'iban': bank_detail.get('iban'),
+                    'swift_code': bank_detail.get('swift_code'),
+                    'routing_number': bank_detail.get('routing_number'),
+                    'bsb_code': bank_detail.get('bsb_code'),
+                    'branch_code': bank_detail.get('branch_code'),
+                    'branch_address': bank_detail.get('branch_address'),
+                    'account_type': bank_detail.get('account_type'),
+                    'currency': bank_detail.get('currency'),
+                    'balance': bank_detail.get('balance'),
+                    'other_details': bank_detail.get('other_details'),
                     'is_structured_record': True
                 }
-            else:
-                # It's an object (from SQLite)
-                result_dict = {
-                    'source_pdf': record.source_pdf if hasattr(record, 'source_pdf') else '',
-                    'account_number': record.account_number if hasattr(record, 'account_number') else None,
-                    'account_name': record.account_name if hasattr(record, 'account_name') else None,
-                    'bank_name': record.bank_name if hasattr(record, 'bank_name') else None,
-                    'sort_code': record.sort_code if hasattr(record, 'sort_code') else None,
-                    'iban': record.iban if hasattr(record, 'iban') else None,
-                    'swift_code': record.swift_code if hasattr(record, 'swift_code') else None,
-                    'routing_number': record.routing_number if hasattr(record, 'routing_number') else None,
-                    'bsb_code': record.bsb_code if hasattr(record, 'bsb_code') else None,
-                    'branch_code': record.branch_code if hasattr(record, 'branch_code') else None,
-                    'branch_address': record.branch_address if hasattr(record, 'branch_address') else None,
-                    'account_type': record.account_type if hasattr(record, 'account_type') else None,
-                    'currency': record.currency if hasattr(record, 'currency') else None,
-                    'balance': record.balance if hasattr(record, 'balance') else None,
-                    'other_details': record.other_details if hasattr(record, 'other_details') else None,
-                    # Add a flag to indicate this is a structured record from the database
-                    'is_structured_record': True
-                }
-            results.append(result_dict)
-        
-        # Create file info list
-        files = []
-        for filename in processed_files:
-            files.append({
-                "name": filename,
-                "size": 0  # Size not available from DB
-            })
-        
-        # Add raw extractions to results
-        for extraction in raw_extractions:
-            # Use dict.get() for safer access
-            results.append({
-                "source_pdf": extraction.get('source_pdf', 'Unknown'),
-                "raw_data": extraction.get('raw_data', {}),
-                "is_raw_extraction": True
-            })
+                results.append(result_dict) 
         
         return SessionStatus(
-            files=files,
             results=results,
-            total_records=total_records
+            total_records=len(results)
         )
     except Exception as e:
         logger.error(f"Error in session-status endpoint: {str(e)}")

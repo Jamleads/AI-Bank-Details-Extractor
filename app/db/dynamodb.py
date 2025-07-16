@@ -640,7 +640,7 @@ class DynamoDBService:
         timestamp = datetime.now().isoformat()
         
         # Convert raw_data to use Decimal for float values if needed
-        raw_data = extraction_data.get('raw_data', {})
+        raw_data = extraction_data.get('raw_json', {})
         
         extraction_item = {
             'id': extraction_id,
