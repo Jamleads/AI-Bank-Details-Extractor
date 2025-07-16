@@ -326,68 +326,69 @@
         }
 
         // Process button
-        processBtn.addEventListener('click', function () {
-            if (uploadedFiles.length === 0) return;
+        // NOTE: This event listener is now handled in main.js to avoid duplicate calls
+        // processBtn.addEventListener('click', function () {
+        //     if (uploadedFiles.length === 0) return;
 
-            // Disable the button during processing
-            processBtn.disabled = true;
-            processBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Processing...';
+        //     // Disable the button during processing
+        //     processBtn.disabled = true;
+        //     processBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Processing...';
 
-            // Create FormData and append files
-            const formData = new FormData();
-            uploadedFiles.forEach(file => {
-                formData.append('files', file);
-            });
+        //     // Create FormData and append files
+        //     const formData = new FormData();
+        //     uploadedFiles.forEach(file => {
+        //         formData.append('files', file);
+        //     });
 
-            // Process files directly with extract endpoint
-            fetch('/api/extract', {
-                method: 'POST',
-                headers: {
-                    'Authorization': `Bearer ${authToken}`
-                },
-                body: formData
-            })
-                .then(response => {
-                    if (!response.ok) {
-                        return response.json().then(data => {
-                            throw new Error(data.detail || `Error: ${response.status}`);
-                        });
-                    }
-                    return response.json();
-                })
-                .then(data => {
-                    // Check for errors
-                    if (data.errors && data.errors.length > 0) {
-                        const errorMessages = data.errors.map(err =>
-                            `${err.filename}: ${err.error}`
-                        ).join('\n');
+        //     // Process files directly with extract endpoint
+        //     fetch('/api/extract', {
+        //         method: 'POST',
+        //         headers: {
+        //             'Authorization': `Bearer ${authToken}`
+        //         },
+        //         body: formData
+        //     })
+        //         .then(response => {
+        //             if (!response.ok) {
+        //                 return response.json().then(data => {
+        //                     throw new Error(data.detail || `Error: ${response.status}`);
+        //                 });
+        //             }
+        //             return response.json();
+        //         })
+        //         .then(data => {
+        //             // Check for errors
+        //             if (data.errors && data.errors.length > 0) {
+        //                 const errorMessages = data.errors.map(err =>
+        //                     `${err.filename}: ${err.error}`
+        //                 ).join('\n');
 
-                        if (data.results && data.results.length > 0) {
-                            alert(`Processed ${data.results.length} files with some errors:\n${errorMessages}`);
-                        } else {
-                            throw new Error(`Failed to process files:\n${errorMessages}`);
-                        }
-                    } else {
-                        alert(`Successfully processed ${data.results ? data.results.length : 0} files.`);
-                    }
+        //                 if (data.results && data.results.length > 0) {
+        //                     alert(`Processed ${data.results.length} files with some errors:\n${errorMessages}`);
+        //                 } else {
+        //                     throw new Error(`Failed to process files:\n${errorMessages}`);
+        //                 }
+        //             } else {
+        //                 alert(`Successfully processed ${data.results ? data.results.length : 0} files.`);
+        //             }
 
-                    // Clear selected files after successful upload
-                    uploadedFiles = [];
-                    updateFileList();
-                    updateButtonStates();
+        //             // Clear selected files after successful upload
+        //             uploadedFiles = [];
+        //             updateFileList();
+        //             updateButtonStates();
 
-                    // Display results
-                    displayResults(data.results || []);
-                })
-                .catch(error => {
-                    console.error('Error:', error);
-                    alert(`Error processing files: ${error.message}`);
-                })
-                .finally(() => {
-                    processBtn.disabled = false;
-                    processBtn.innerHTML = 'Process Files';
-                });
-        });
+        //             // Display results
+        //             displayResults(data.results || []);
+        //         })
+        //         .catch(error => {
+        //             console.error('Error:', error);
+        //             alert(`Error processing files: ${error.message}`);
+        //         })
+        //         .finally(() => {
+        //             processBtn.disabled = false;
+        //             processBtn.innerHTML = 'Process Files';
+        //         });
+        // });
 
         // Clear button - clears all data including previously processed files
         // This event listener is being removed as it conflicts with the one in main.js

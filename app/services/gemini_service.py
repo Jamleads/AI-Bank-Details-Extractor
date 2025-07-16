@@ -242,14 +242,12 @@ class GeminiService:
             
             # Create prompt for Gemini based on header configuration
             prompt = self._create_prompt(header_config)
-            logger.debug("Prompt created")
             
             # Create the file part for the request
             file_part = {
                 "mime_type": mime_type,
                 "data": file_data
             }
-            logger.debug(f"File part created for request with mime type: {mime_type}")
             
             # Generate content with both text prompt and file
             logger.debug("Calling Gemini API...")
@@ -266,7 +264,7 @@ class GeminiService:
                 raise HTTPException(status_code=500, detail="No text response received from Gemini")
             
             # Parse the response
-            logger.debug(f"Parsing response: {response.text}")
+            logger.debug(f"Parsing response: \n\n\n{response.text}")
             json_data = self._parse_response(response.text)
             logger.debug(f"Parsed JSON data from response")
             return json_data

@@ -192,12 +192,10 @@ async def extract_bank_details(
             # Secure the filename
             filename = os.path.splitext(file.filename)[0] # Keep original filename for secure_filename
             filename = secure_filename(filename) # Use secure_filename for consistency
-            logger.debug(f"Processing file: {filename}")
             
             try:
                 # Read file content
                 file_content = await file.read()
-                logger.debug(f"File {filename} read successfully, size: {len(file_content)} bytes")
                 
                 if len(file_content) == 0:
                     logger.warning(f"File {filename} is empty")
@@ -231,16 +229,12 @@ async def extract_bank_details(
                         extracted_data = extracted_file['data']
                         extracted_ext = extracted_file['ext']
                         
-                        logger.debug(f"Processing extracted file: {extracted_filename} ({extracted_ext})")
-                        
                         try:
                             # Extract bank details with Gemini
-                            logger.debug(f"Calling Gemini API for file {extracted_filename}")
                             json_data = gemini_service.extract_bank_details(extracted_data, extracted_ext, header_config)
                             logger.debug(f"Gemini API returned JSON data for file {json_data}")
                             
                             # Save raw extraction data
-                            logger.debug(f"Saving raw extraction data for file {extracted_filename}")
                             raw_result = await save_raw_extraction(get_user_id(current_user), extracted_filename, json_data)
                             if not raw_result['success']:
                                 logger.warning(f"Failed to save raw extraction data: {raw_result.get('error')}")
@@ -263,14 +257,10 @@ async def extract_bank_details(
                     all_results.extend(zip_results)
                     errors.extend(zip_errors)
                     
-                    logger.debug(f"Processed ZIP file {filename}: {len(zip_results)} files successful, {len(zip_errors)} files failed")
-                    
                 else:
                     # Process regular file (PDF, PNG, JPG, JPEG, WebP)
                     # Extract bank details with Gemini
-                    logger.debug(f"Calling Gemini API for file {filename}")
                     json_data = gemini_service.extract_bank_details(file_content, file_ext, header_config)
-                    logger.debug(f"Gemini API returned JSON data for file {filename}")
                     
                     # Save raw extraction data
                     logger.debug(f"Saving raw extraction data for file {filename} and data \n\n {json_data}")
