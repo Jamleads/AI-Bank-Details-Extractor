@@ -17,7 +17,7 @@ from app.models.bank_details import BankDetail
 from app.models.response import ProcessResponse, SessionStatus
 from app.services.gemini_service import GeminiService
 from app.utils.auth import get_current_user_required, get_user_id
-from app.utils.file import generate_csv_file, generate_json_file, generate_excel_file
+from app.utils.file import generate_csv_file, generate_json_file
 from app.services.header_config_service import apply_header_mapping
 from app.db.operations import (
     save_bank_details, 
@@ -419,7 +419,6 @@ async def download_csv(
         background_tasks: FastAPI BackgroundTasks
         config_id: Header configuration ID (optional)
         format: File format (csv or xlsx)
-        use_raw: Whether to use raw JSON data instead of structured records
         db: Database session
         current_user: Current authenticated user
         
@@ -427,189 +426,66 @@ async def download_csv(
         FileResponse with CSV file
     """
     try:
-        logger.debug(f"Download CSV endpoint called with config_id={config_id}, format={format}, use_raw={use_raw}")
+        logger.debug(f"Download CSV endpoint called with config_id={config_id}, format={format}")
         
-        if use_raw:
-            # Get raw extractions
-            raw_extractions = await get_raw_extractions(get_user_id(current_user), db)
-            
-            if not raw_extractions:
-                logger.warning("No raw extractions found for download")
-                raise HTTPException(
-                    status_code=400, 
-                    detail="No raw extractions found. Please process some PDFs first."
-                )
-            
-            logger.debug(f"Found {len(raw_extractions)} raw extractions for download")
-            
-            # Extract all bank details from raw extractions
-            all_bank_details = []
-            for extraction in raw_extractions:
-                raw_data = extraction.get('raw_data', {})
-                source_pdf = extraction.get('source_pdf', 'Unknown')
-                extraction_date_str = extraction.get('extraction_date', '')
-                
-                # Handle extraction_date which could be a string or a datetime object
-                if isinstance(extraction_date_str, str):
-                    extraction_date = extraction_date_str
-                elif hasattr(extraction_date_str, 'strftime'):
-                    extraction_date = extraction_date_str.strftime('%Y-%m-%d %H:%M:%S')
-                else:
-                    extraction_date = str(datetime.now())
-                
-                if 'bank_details' in raw_data and isinstance(raw_data['bank_details'], list):
-                    for bank_detail in raw_data['bank_details']:
-                        # Add source_pdf and extraction_date to each bank detail
-                        bank_detail['source_pdf'] = source_pdf
-                        bank_detail['extraction_date'] = extraction_date
-                        all_bank_details.append(bank_detail)
-                else:
-                    # If no bank_details field, add the entire raw data as a record
-                    record = {'source_pdf': source_pdf, 'extraction_date': extraction_date}
-                    record.update(raw_data)
-                    all_bank_details.append(record)
-            
-            if not all_bank_details:
-                logger.warning("No bank details found in raw extractions")
-                raise HTTPException(
-                    status_code=400, 
-                    detail="No bank details found in raw extractions."
-                )
-            
-            # Generate file based on format
-            if format.lower() == "xlsx":
-                file_path, filename = generate_excel_file(all_bank_details)
-                mime_type = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
-                filename = 'bank_details_raw.xlsx'
-            else:
-                file_path, filename = generate_csv_file(all_bank_details)
-                mime_type = 'text/csv'
-                filename = 'bank_details_raw.csv'
-            
-            # Add task to remove the file after the response is sent
-            background_tasks.add_task(remove_temp_file, file_path)
-            
-            # Return the file
-            return FileResponse(
-                path=file_path,
-                media_type=mime_type,
-                filename=filename
+        raw_extractions = await get_raw_extractions(get_user_id(current_user), db)
+        
+        if not raw_extractions:
+            logger.warning("No raw extractions found for download")
+            raise HTTPException(
+                status_code=400, 
+                detail="No raw extractions found. Please process some PDFs first."
             )
-        else:
-            # Original implementation for structured records
-            # Get user records
-            records = await get_user_records(get_user_id(current_user), db)
+        
+        logger.debug(f"Found {len(raw_extractions)} raw extractions for download")
+        
+        # Extract all bank details from raw extractions
+        all_bank_details = []
+        for extraction in raw_extractions:
+            raw_data = extraction.get('raw_data', {})
+            source_pdf = extraction.get('source_pdf', 'Unknown')
+            extraction_date_str = extraction.get('extraction_date', '')
             
-            if not records:
-                logger.warning("No records found for download")
-                raise HTTPException(
-                    status_code=400, 
-                    detail="No records found. Please process some PDFs first."
-                )
-            
-            logger.debug(f"Found {len(records)} records for download")
-            
-            # Get header configuration
-            header_config = None
-            if config_id:
-                logger.debug(f"Fetching header config with ID: {config_id}")
-                header_config = await get_header_config(config_id, get_user_id(current_user), db)
-                if not header_config:
-                    logger.warning(f"Header configuration with ID {config_id} not found")
-                    raise HTTPException(status_code=404, detail="Header configuration not found")
-                
-                # Handle header_config as either object or dict
-                config_name = header_config.name if hasattr(header_config, 'name') else header_config.get('name', 'Unknown')
-                config_mappings = header_config.header_mappings if hasattr(header_config, 'header_mappings') else header_config.get('header_mappings', {})
-                logger.debug(f"Using header config: {config_name}, mappings: {config_mappings}")
+            # Handle extraction_date which could be a string or a datetime object
+            if isinstance(extraction_date_str, str):
+                extraction_date = extraction_date_str
+            elif hasattr(extraction_date_str, 'strftime'):
+                extraction_date = extraction_date_str.strftime('%Y-%m-%d %H:%M:%S')
             else:
-                # Use default config
-                logger.debug("No config_id provided, using default config")
-                header_config = await ensure_default_config(get_user_id(current_user), db)
-                
-                # Handle header_config as either object or dict
-                config_name = header_config.name if hasattr(header_config, 'name') else header_config.get('name', 'Default')
-                config_mappings = header_config.header_mappings if hasattr(header_config, 'header_mappings') else header_config.get('header_mappings', {})
-                logger.debug(f"Using default config: {config_name}, mappings: {config_mappings}")
+                extraction_date = str(datetime.now())
             
-            # Override format if specified in config
-            config_format = header_config.file_format if hasattr(header_config, 'file_format') else header_config.get('file_format', 'csv')
-            if format == "csv" and config_format != "csv":
-                logger.debug(f"Overriding format from {format} to {config_format}")
-                format = config_format
-            
-            # Convert records to dict
-            records_dict = []
-            for record in records:
-                # Check if record is a dict or an object
-                if isinstance(record, dict):
-                    # It's already a dict (from DynamoDB)
-                    record_dict = {
-                        'source_pdf': record.get('source_pdf', ''),
-                        'extraction_date': record.get('extraction_date', str(datetime.now())),
-                        'account_number': record.get('account_number'),
-                        'account_name': record.get('account_name'),
-                        'bank_name': record.get('bank_name'),
-                        'sort_code': record.get('sort_code'),
-                        'iban': record.get('iban'),
-                        'swift_code': record.get('swift_code'),
-                        'routing_number': record.get('routing_number'),
-                        'bsb_code': record.get('bsb_code'),
-                        'branch_code': record.get('branch_code'),
-                        'branch_address': record.get('branch_address'),
-                        'account_type': record.get('account_type'),
-                        'currency': record.get('currency'),
-                        'balance': record.get('balance'),
-                        'other_details': record.get('other_details')
-                    }
-                else:
-                    # It's an object (from SQLite)
-                    extraction_date = record.extraction_date.strftime('%Y-%m-%d %H:%M:%S') if hasattr(record, 'extraction_date') and record.extraction_date else str(datetime.now())
-                    record_dict = {
-                        'source_pdf': record.source_pdf if hasattr(record, 'source_pdf') else '',
-                        'extraction_date': extraction_date,
-                        'account_number': record.account_number if hasattr(record, 'account_number') else None,
-                        'account_name': record.account_name if hasattr(record, 'account_name') else None,
-                        'bank_name': record.bank_name if hasattr(record, 'bank_name') else None,
-                        'sort_code': record.sort_code if hasattr(record, 'sort_code') else None,
-                        'iban': record.iban if hasattr(record, 'iban') else None,
-                        'swift_code': record.swift_code if hasattr(record, 'swift_code') else None,
-                        'routing_number': record.routing_number if hasattr(record, 'routing_number') else None,
-                        'bsb_code': record.bsb_code if hasattr(record, 'bsb_code') else None,
-                        'branch_code': record.branch_code if hasattr(record, 'branch_code') else None,
-                        'branch_address': record.branch_address if hasattr(record, 'branch_address') else None,
-                        'account_type': record.account_type if hasattr(record, 'account_type') else None,
-                        'currency': record.currency if hasattr(record, 'currency') else None,
-                        'balance': record.balance if hasattr(record, 'balance') else None,
-                        'other_details': record.other_details if hasattr(record, 'other_details') else None
-                    }
-                records_dict.append(record_dict)
-            
-            # Apply header mapping
-            mapped_records = apply_header_mapping(records_dict, config_mappings)
-            
-            # Get custom headers string if provided in header config
-            custom_headers = None
-            if config_mappings:
-                custom_headers = ','.join(config_mappings.values())
-            
-            # Generate file based on format
-            if format.lower() == "xlsx":
-                file_path, filename = generate_excel_file(mapped_records, custom_headers)
-                mime_type = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+            if 'bank_details' in raw_data and isinstance(raw_data['bank_details'], list):
+                for bank_detail in raw_data['bank_details']:
+                    # Add source_pdf and extraction_date to each bank detail
+                    bank_detail['source_pdf'] = source_pdf
+                    bank_detail['extraction_date'] = extraction_date
+                    all_bank_details.append(bank_detail)
             else:
-                file_path, filename = generate_csv_file(mapped_records, custom_headers)
-                mime_type = 'text/csv'
-            
-            # Add task to remove the file after the response is sent
-            background_tasks.add_task(remove_temp_file, file_path)
-            
-            # Return the file
-            return FileResponse(
-                path=file_path,
-                media_type=mime_type,
-                filename=filename
+                # If no bank_details field, add the entire raw data as a record
+                record = {'source_pdf': source_pdf, 'extraction_date': extraction_date}
+                record.update(raw_data)
+                all_bank_details.append(record)
+        
+        if not all_bank_details:
+            logger.warning("No bank details found in raw extractions")
+            raise HTTPException(
+                status_code=400, 
+                detail="No bank details found in raw extractions."
             )
+        
+        file_path, filename = generate_csv_file(all_bank_details)
+        mime_type = 'text/csv'
+        filename = 'bank_details_raw.csv'
+        
+        # Add task to remove the file after the response is sent
+        background_tasks.add_task(remove_temp_file, file_path)
+        
+        # Return the file
+        return FileResponse(
+            path=file_path,
+            media_type=mime_type,
+            filename=filename
+        )
     
     except HTTPException:
         # Re-raise HTTP exceptions

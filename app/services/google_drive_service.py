@@ -14,7 +14,7 @@ from googleapiclient.http import MediaFileUpload
 from fastapi import HTTPException, Request
 
 from app.core.config import settings
-from app.utils.export_utils import generate_csv_file, generate_excel_file, generate_json_file
+from app.utils.export_utils import generate_csv_file, generate_json_file
 
 # Setup logging
 logger = logging.getLogger(__name__)
@@ -257,12 +257,9 @@ class GoogleDriveService:
             if format.lower() == 'csv':
                 file_path, _ = generate_csv_file(data, custom_headers)
                 mime_type = 'text/csv'
-            elif format.lower() == 'json':
+            else:
                 file_path, _ = generate_json_file(data)
                 mime_type = 'application/json'
-            else:  # xlsx
-                file_path, _ = generate_excel_file(data, custom_headers)
-                mime_type = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
             
             # Upload file to Google Drive
             result = GoogleDriveService.upload_file_to_drive(

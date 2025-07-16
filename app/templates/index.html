@@ -87,13 +87,6 @@
                     </select>
                 </div>
                 <div class="form-group">
-                    <label for="data-type">Data Type:</label>
-                    <select id="data-type" class="form-control">
-                        <option value="structured">Structured</option>
-                        <option value="raw">Raw</option>
-                    </select>
-                </div>
-                <div class="form-group">
                     <label for="header-config-dropdown">Header Configuration:</label>
                     <select id="header-config-dropdown" class="form-control">
                         <option value="">Default</option>
@@ -429,13 +422,12 @@
         // Export buttons
         document.getElementById('exportCsvBtn').addEventListener('click', function () {
             const format = document.getElementById('export-format').value;
-            const isRawData = document.getElementById('data-type').value === 'raw';
             const headerConfigId = document.getElementById('header-config-dropdown').value;
             const useCustomHeader = document.getElementById('custom-header').checked;
             const customHeaders = useCustomHeader ? document.getElementById('header-input').value : '';
 
             let url = `/api/export/${format}?token=${authToken}`;
-            if (isRawData) url += '&raw=true';
+            // Default to structured data (not raw)
             if (headerConfigId) url += `&config_id=${headerConfigId}`;
             if (useCustomHeader && customHeaders) url += `&custom_headers=${encodeURIComponent(customHeaders)}`;
 
@@ -444,7 +436,6 @@
 
         document.getElementById('exportDriveBtn').addEventListener('click', function () {
             const format = document.getElementById('export-format').value;
-            const isRawData = document.getElementById('data-type').value === 'raw';
             const headerConfigId = document.getElementById('header-config-dropdown').value;
             const useCustomHeader = document.getElementById('custom-header').checked;
             const customHeaders = useCustomHeader ? document.getElementById('header-input').value : '';
@@ -462,7 +453,7 @@
                 body: JSON.stringify({
                     file_name: fileName,
                     format: format,
-                    use_raw: isRawData,
+                    use_raw: false, // Default to structured data
                     config_id: headerConfigId || undefined,
                     custom_headers: useCustomHeader ? customHeaders : null
                 })
