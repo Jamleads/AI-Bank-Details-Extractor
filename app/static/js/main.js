@@ -700,9 +700,9 @@ function downloadExport() {
     let url = '';
 
     if (format === 'json') {
-        url = `/api/download-json?use_raw=${isRawData}`;
+        url = `/download-json?use_raw=${isRawData}`;
     } else {
-        url = `/api/download-csv?format=${format}&use_raw=${isRawData}`;
+        url = `/download-csv?format=${format}&use_raw=${isRawData}`;
 
         if (headerConfigId) {
             url += `&config_id=${headerConfigId}`;

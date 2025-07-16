@@ -1,40 +1,35 @@
 """
-API routes for the application
+API routes for bank details extraction
 """
 import os
-import csv
-import tempfile
+import io
+import zipfile
 import traceback
 import logging
-import zipfile
-import io
-from typing import List, Dict, Any, Optional, Tuple
-
-from fastapi import APIRouter, UploadFile, File, HTTPException, Depends, Response, Request, BackgroundTasks
+from typing import List, Dict, Any, Optional
+from fastapi import APIRouter, Depends, File, UploadFile, HTTPException, Request, BackgroundTasks
 from fastapi.responses import FileResponse
-from fastapi.templating import Jinja2Templates
 from sqlalchemy.ext.asyncio import AsyncSession
 from werkzeug.utils import secure_filename
-
-from app.core.config import settings
-from app.db.database import get_db
-from app.db.models import User
-from app.models.bank_details import ProcessResponse, SessionStatus, BankDetail
-from app.models.user import UserResponse
+from app.db.database import get_async_db
+from app.models.user import UserDB
+from app.models.bank_details import BankDetail
+from app.models.response import ProcessResponse, SessionStatus
 from app.services.gemini_service import GeminiService
-from app.services.bank_record_service import (
+from app.utils.auth import get_current_user_required, get_user_id
+from app.utils.file import generate_csv_file, generate_json_file, generate_excel_file
+from app.services.header_config_service import apply_header_mapping
+from app.db.operations import (
     save_bank_details, 
     get_user_records, 
     get_processed_files,
     count_user_records,
-    clear_user_session,
     save_raw_extraction,
-    get_raw_extractions
+    get_raw_extractions,
+    clear_user_session
 )
-from app.services.auth_service import get_current_user_required
-from app.services.header_config_service import get_header_config, ensure_default_config, apply_header_mapping
-from app.utils.export_utils import generate_csv_file, generate_excel_file, generate_json_file
-from app.api.payment import router as payment_router
+from app.db.header_config import get_header_config, ensure_default_config
+from datetime import datetime
 
 # Setup logging
 logger = logging.getLogger(__name__)
@@ -44,10 +39,10 @@ logger.setLevel(logging.DEBUG)
 router = APIRouter(prefix="/api")
 
 # Include payment router
-router.include_router(payment_router, prefix="/payment", tags=["payment"])
+# router.include_router(payment_router, prefix="/payment", tags=["payment"]) # This line was removed as per the new_code, as payment_router is no longer imported.
 
 # Templates
-templates = Jinja2Templates(directory="app/templates")
+# templates = Jinja2Templates(directory="app/templates") # This line was removed as per the new_code, as templates are no longer used.
 
 
 # Dependencies
@@ -59,7 +54,8 @@ def get_gemini_service():
 @router.get("/")
 async def index(request: Request):
     """Main page"""
-    return templates.TemplateResponse("index.html", {"request": request})
+    # return templates.TemplateResponse("index.html", {"request": request}) # This line was removed as per the new_code, as templates are no longer used.
+    return {"message": "Welcome to the Bank Details Extraction API"}
 
 
 async def extract_zip_files(zip_data: bytes) -> List[Dict[str, Any]]:
@@ -136,8 +132,8 @@ async def extract_bank_details(
     files: List[UploadFile] = File(...),
     header_config_id: Optional[int] = None,
     gemini_service: GeminiService = Depends(get_gemini_service),
-    db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user_required)
+    db: AsyncSession = Depends(get_async_db),
+    current_user: UserDB = Depends(get_current_user_required)
 ):
     """
     Process uploaded PDF and image files and extract bank details
@@ -162,8 +158,7 @@ async def extract_bank_details(
         # Get header configuration if provided
         header_config = None
         if header_config_id:
-            from app.services.header_config_service import get_header_config
-            header_config = await get_header_config(header_config_id, current_user.id, db)
+            header_config = await get_header_config(header_config_id, get_user_id(current_user), db)
             if not header_config:
                 logger.warning(f"Header configuration with ID {header_config_id} not found")
                 raise HTTPException(status_code=404, detail="Header configuration not found")
@@ -195,7 +190,8 @@ async def extract_bank_details(
                 continue
                 
             # Secure the filename
-            filename = secure_filename(file.filename)
+            filename = os.path.splitext(file.filename)[0] # Keep original filename for secure_filename
+            filename = secure_filename(filename) # Use secure_filename for consistency
             logger.debug(f"Processing file: {filename}")
             
             try:
@@ -245,7 +241,7 @@ async def extract_bank_details(
                             
                             # Save raw extraction data
                             logger.debug(f"Saving raw extraction data for file {extracted_filename}")
-                            raw_result = await save_raw_extraction(json_data, extracted_filename, current_user.id, db)
+                            raw_result = await save_raw_extraction(get_user_id(current_user), extracted_filename, json_data)
                             if not raw_result['success']:
                                 logger.warning(f"Failed to save raw extraction data: {raw_result.get('error')}")
                             
@@ -254,13 +250,23 @@ async def extract_bank_details(
                             if "bank_details" in json_data and isinstance(json_data["bank_details"], list):
                                 # Convert the raw JSON bank_details to BankDetail objects
                                 bank_details = [BankDetail(**item) for item in json_data["bank_details"]]
+                                # Add source_pdf to each bank detail
+                                for detail in bank_details:
+                                    if hasattr(detail, 'model_dump'):
+                                        detail_dict = detail.model_dump()
+                                        detail_dict["source_pdf"] = extracted_filename
+                                        detail = BankDetail(**detail_dict)
+                                    elif hasattr(detail, 'dict'):
+                                        detail_dict = detail.dict()
+                                        detail_dict["source_pdf"] = extracted_filename
+                                        detail = BankDetail(**detail_dict)
                                 logger.debug(f"Converted {len(bank_details)} bank details from JSON data")
                             else:
                                 logger.warning(f"No bank_details field found in JSON response for file {extracted_filename}")
                             
                             # Save to database
                             logger.debug(f"Saving {len(bank_details)} records to database for file {extracted_filename}")
-                            result = await save_bank_details(bank_details, extracted_filename, current_user.id, db)
+                            result = await save_bank_details(get_user_id(current_user), bank_details)
                             zip_records_added += result.get('records_added', 0)
                             logger.debug(f"Added {result.get('records_added', 0)} records to database for file {extracted_filename}")
                             
@@ -293,7 +299,7 @@ async def extract_bank_details(
                     
                     # Save raw extraction data
                     logger.debug(f"Saving raw extraction data for file {filename}")
-                    raw_result = await save_raw_extraction(json_data, filename, current_user.id, db)
+                    raw_result = await save_raw_extraction(get_user_id(current_user), filename, json_data)
                     if not raw_result['success']:
                         logger.warning(f"Failed to save raw extraction data: {raw_result.get('error')}")
                     
@@ -302,13 +308,23 @@ async def extract_bank_details(
                     if "bank_details" in json_data and isinstance(json_data["bank_details"], list):
                         # Convert the raw JSON bank_details to BankDetail objects
                         bank_details = [BankDetail(**item) for item in json_data["bank_details"]]
+                        # Add source_pdf to each bank detail
+                        for detail in bank_details:
+                            if hasattr(detail, 'model_dump'):
+                                detail_dict = detail.model_dump()
+                                detail_dict["source_pdf"] = filename
+                                detail = BankDetail(**detail_dict)
+                            elif hasattr(detail, 'dict'):
+                                detail_dict = detail.dict()
+                                detail_dict["source_pdf"] = filename
+                                detail = BankDetail(**detail_dict)
                         logger.debug(f"Converted {len(bank_details)} bank details from JSON data")
                     else:
                         logger.warning(f"No bank_details field found in JSON response for file {filename}")
                     
                     # Save to database
                     logger.debug(f"Saving {len(bank_details)} records to database for file {filename}")
-                    result = await save_bank_details(bank_details, filename, current_user.id, db)
+                    result = await save_bank_details(get_user_id(current_user), bank_details)
                     total_records_added += result.get('records_added', 0)
                     logger.debug(f"Added {result.get('records_added', 0)} records to database for file {filename}")
                     
@@ -359,8 +375,8 @@ async def extract_bank_details(
 
 @router.get("/session-status", response_model=SessionStatus)
 async def get_session_status(
-    db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user_required)
+    db: AsyncSession = Depends(get_async_db),
+    current_user: UserDB = Depends(get_current_user_required)
 ):
     """
     Get the current session status
@@ -374,39 +390,63 @@ async def get_session_status(
     """
     try:
         # Get processed files
-        processed_files = await get_processed_files(current_user.id, db)
+        processed_files = await get_processed_files(get_user_id(current_user), db)
         
         # Get total records
-        total_records = await count_user_records(current_user.id, db)
+        total_records = await count_user_records(get_user_id(current_user), db)
         
         # Get all records
-        records = await get_user_records(current_user.id, db)
+        records = await get_user_records(get_user_id(current_user), db)
         
         # Get raw extractions
-        raw_extractions = await get_raw_extractions(current_user.id, db)
+        raw_extractions = await get_raw_extractions(get_user_id(current_user), db)
         
         # Convert records to dict for response
         results = []
         for record in records:
-            result_dict = {
-                'source_pdf': record.source_pdf,
-                'account_number': record.account_number,
-                'account_name': record.account_name,
-                'bank_name': record.bank_name,
-                'sort_code': record.sort_code,
-                'iban': record.iban,
-                'swift_code': record.swift_code,
-                'routing_number': record.routing_number,
-                'bsb_code': record.bsb_code,
-                'branch_code': record.branch_code,
-                'branch_address': record.branch_address,
-                'account_type': record.account_type,
-                'currency': record.currency,
-                'balance': record.balance,
-                'other_details': record.other_details,
-                # Add a flag to indicate this is a structured record from the database
-                'is_structured_record': True
-            }
+            # Check if record is a dict or an object
+            if isinstance(record, dict):
+                # It's already a dict (from DynamoDB)
+                result_dict = {
+                    'source_pdf': record.get('source_pdf', ''),
+                    'account_number': record.get('account_number'),
+                    'account_name': record.get('account_name'),
+                    'bank_name': record.get('bank_name'),
+                    'sort_code': record.get('sort_code'),
+                    'iban': record.get('iban'),
+                    'swift_code': record.get('swift_code'),
+                    'routing_number': record.get('routing_number'),
+                    'bsb_code': record.get('bsb_code'),
+                    'branch_code': record.get('branch_code'),
+                    'branch_address': record.get('branch_address'),
+                    'account_type': record.get('account_type'),
+                    'currency': record.get('currency'),
+                    'balance': record.get('balance'),
+                    'other_details': record.get('other_details'),
+                    # Add a flag to indicate this is a structured record from the database
+                    'is_structured_record': True
+                }
+            else:
+                # It's an object (from SQLite)
+                result_dict = {
+                    'source_pdf': record.source_pdf if hasattr(record, 'source_pdf') else '',
+                    'account_number': record.account_number if hasattr(record, 'account_number') else None,
+                    'account_name': record.account_name if hasattr(record, 'account_name') else None,
+                    'bank_name': record.bank_name if hasattr(record, 'bank_name') else None,
+                    'sort_code': record.sort_code if hasattr(record, 'sort_code') else None,
+                    'iban': record.iban if hasattr(record, 'iban') else None,
+                    'swift_code': record.swift_code if hasattr(record, 'swift_code') else None,
+                    'routing_number': record.routing_number if hasattr(record, 'routing_number') else None,
+                    'bsb_code': record.bsb_code if hasattr(record, 'bsb_code') else None,
+                    'branch_code': record.branch_code if hasattr(record, 'branch_code') else None,
+                    'branch_address': record.branch_address if hasattr(record, 'branch_address') else None,
+                    'account_type': record.account_type if hasattr(record, 'account_type') else None,
+                    'currency': record.currency if hasattr(record, 'currency') else None,
+                    'balance': record.balance if hasattr(record, 'balance') else None,
+                    'other_details': record.other_details if hasattr(record, 'other_details') else None,
+                    # Add a flag to indicate this is a structured record from the database
+                    'is_structured_record': True
+                }
             results.append(result_dict)
         
         # Create file info list
@@ -419,9 +459,10 @@ async def get_session_status(
         
         # Add raw extractions to results
         for extraction in raw_extractions:
+            # Use dict.get() for safer access
             results.append({
-                "source_pdf": extraction['source_pdf'],
-                "raw_data": extraction['raw_data'],
+                "source_pdf": extraction.get('source_pdf', 'Unknown'),
+                "raw_data": extraction.get('raw_data', {}),
                 "is_raw_extraction": True
             })
         
@@ -438,8 +479,8 @@ async def get_session_status(
 
 @router.post("/clear-session")
 async def clear_session(
-    db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user_required)
+    db: AsyncSession = Depends(get_async_db),
+    current_user: UserDB = Depends(get_current_user_required)
 ):
     """
     Clear the current session
@@ -452,7 +493,7 @@ async def clear_session(
         Success message
     """
     try:
-        success = await clear_user_session(current_user.id, db)
+        success = await clear_user_session(get_user_id(current_user), db)
         if success:
             return {"success": True}
         else:
@@ -479,8 +520,8 @@ async def download_csv(
     config_id: int = None,
     format: str = "csv",
     use_raw: bool = False,
-    db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user_required)
+    db: AsyncSession = Depends(get_async_db),
+    current_user: UserDB = Depends(get_current_user_required)
 ):
     """
     Download the CSV file with user's bank details
@@ -501,7 +542,7 @@ async def download_csv(
         
         if use_raw:
             # Get raw extractions
-            raw_extractions = await get_raw_extractions(current_user.id, db)
+            raw_extractions = await get_raw_extractions(get_user_id(current_user), db)
             
             if not raw_extractions:
                 logger.warning("No raw extractions found for download")
@@ -515,9 +556,17 @@ async def download_csv(
             # Extract all bank details from raw extractions
             all_bank_details = []
             for extraction in raw_extractions:
-                raw_data = extraction['raw_data']
-                source_pdf = extraction['source_pdf']
-                extraction_date = extraction['extraction_date'].strftime('%Y-%m-%d %H:%M:%S')
+                raw_data = extraction.get('raw_data', {})
+                source_pdf = extraction.get('source_pdf', 'Unknown')
+                extraction_date_str = extraction.get('extraction_date', '')
+                
+                # Handle extraction_date which could be a string or a datetime object
+                if isinstance(extraction_date_str, str):
+                    extraction_date = extraction_date_str
+                elif hasattr(extraction_date_str, 'strftime'):
+                    extraction_date = extraction_date_str.strftime('%Y-%m-%d %H:%M:%S')
+                else:
+                    extraction_date = str(datetime.now())
                 
                 if 'bank_details' in raw_data and isinstance(raw_data['bank_details'], list):
                     for bank_detail in raw_data['bank_details']:
@@ -560,7 +609,7 @@ async def download_csv(
         else:
             # Original implementation for structured records
             # Get user records
-            records = await get_user_records(current_user.id, db)
+            records = await get_user_records(get_user_id(current_user), db)
             
             if not records:
                 logger.warning("No records found for download")
@@ -575,7 +624,7 @@ async def download_csv(
             header_config = None
             if config_id:
                 logger.debug(f"Fetching header config with ID: {config_id}")
-                header_config = await get_header_config(config_id, current_user.id, db)
+                header_config = await get_header_config(config_id, get_user_id(current_user), db)
                 if not header_config:
                     logger.warning(f"Header configuration with ID {config_id} not found")
                     raise HTTPException(status_code=404, detail="Header configuration not found")
@@ -583,7 +632,7 @@ async def download_csv(
             else:
                 # Use default config
                 logger.debug("No config_id provided, using default config")
-                header_config = await ensure_default_config(current_user.id, db)
+                header_config = await ensure_default_config(get_user_id(current_user), db)
                 logger.debug(f"Using default config: {header_config.name}, mappings: {header_config.header_mappings}")
             
             # Override format if specified in config
@@ -649,11 +698,47 @@ async def download_csv(
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@router.get("/export/csv")
+async def export_csv(
+    background_tasks: BackgroundTasks,
+    token: str = None,
+    config_id: int = None,
+    format: str = "csv",
+    use_raw: bool = False,
+    db: AsyncSession = Depends(get_async_db),
+    current_user: UserDB = Depends(get_current_user_required)
+):
+    """
+    Export CSV endpoint (alias for download-csv)
+    
+    Args:
+        background_tasks: FastAPI BackgroundTasks
+        token: Authentication token (optional)
+        config_id: Header configuration ID (optional)
+        format: File format (csv or xlsx)
+        use_raw: Whether to use raw JSON data instead of structured records
+        db: Database session
+        current_user: Current authenticated user
+        
+    Returns:
+        FileResponse with CSV file
+    """
+    # Just call the existing download-csv endpoint
+    return await download_csv(
+        background_tasks=background_tasks,
+        config_id=config_id,
+        format=format,
+        use_raw=use_raw,
+        db=db,
+        current_user=current_user
+    )
+
+
 @router.get("/check_file/{filename}")
 async def check_file(
     filename: str,
-    current_user: User = Depends(get_current_user_required),
-    db: AsyncSession = Depends(get_db)
+    current_user: UserDB = Depends(get_current_user_required),
+    db: AsyncSession = Depends(get_async_db)
 ):
     """
     Check if a user has records
@@ -671,7 +756,7 @@ async def check_file(
             return {"exists": False, "error": "Invalid file format"}
             
         # Check if user has records
-        total_records = await count_user_records(current_user.id, db)
+        total_records = await count_user_records(get_user_id(current_user), db)
         return {"exists": total_records > 0}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -681,8 +766,8 @@ async def check_file(
 async def download_json(
     background_tasks: BackgroundTasks,
     use_raw: bool = True,
-    db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user_required)
+    db: AsyncSession = Depends(get_async_db),
+    current_user: UserDB = Depends(get_current_user_required)
 ):
     """
     Download the JSON file with user's bank details
@@ -701,7 +786,7 @@ async def download_json(
         
         if use_raw:
             # Get raw extractions
-            raw_extractions = await get_raw_extractions(current_user.id, db)
+            raw_extractions = await get_raw_extractions(get_user_id(current_user), db)
             
             if not raw_extractions:
                 logger.warning("No raw extractions found for download")
@@ -715,9 +800,17 @@ async def download_json(
             # Extract all bank details from raw extractions
             all_bank_details = []
             for extraction in raw_extractions:
-                raw_data = extraction['raw_data']
-                source_pdf = extraction['source_pdf']
-                extraction_date = extraction['extraction_date'].strftime('%Y-%m-%d %H:%M:%S')
+                raw_data = extraction.get('raw_data', {})
+                source_pdf = extraction.get('source_pdf', 'Unknown')
+                extraction_date_str = extraction.get('extraction_date', '')
+                
+                # Handle extraction_date which could be a string or a datetime object
+                if isinstance(extraction_date_str, str):
+                    extraction_date = extraction_date_str
+                elif hasattr(extraction_date_str, 'strftime'):
+                    extraction_date = extraction_date_str.strftime('%Y-%m-%d %H:%M:%S')
+                else:
+                    extraction_date = str(datetime.now())
                 
                 if 'bank_details' in raw_data and isinstance(raw_data['bank_details'], list):
                     for bank_detail in raw_data['bank_details']:
@@ -752,7 +845,7 @@ async def download_json(
             )
         else:
             # Get structured records
-            records = await get_user_records(current_user.id, db)
+            records = await get_user_records(get_user_id(current_user), db)
             
             if not records:
                 logger.warning("No records found for download")
@@ -766,24 +859,49 @@ async def download_json(
             # Convert records to dict
             records_dict = []
             for record in records:
-                records_dict.append({
-                    'source_pdf': record.source_pdf,
-                    'extraction_date': record.extraction_date.strftime('%Y-%m-%d %H:%M:%S'),
-                    'account_number': record.account_number,
-                    'account_name': record.account_name,
-                    'bank_name': record.bank_name,
-                    'sort_code': record.sort_code,
-                    'iban': record.iban,
-                    'swift_code': record.swift_code,
-                    'routing_number': record.routing_number,
-                    'bsb_code': record.bsb_code,
-                    'branch_code': record.branch_code,
-                    'branch_address': record.branch_address,
-                    'account_type': record.account_type,
-                    'currency': record.currency,
-                    'balance': record.balance,
-                    'other_details': record.other_details
-                })
+                # Check if record is a dict or an object
+                if isinstance(record, dict):
+                    # It's already a dict (from DynamoDB)
+                    record_dict = {
+                        'source_pdf': record.get('source_pdf', ''),
+                        'extraction_date': record.get('extraction_date', str(datetime.now())),
+                        'account_number': record.get('account_number'),
+                        'account_name': record.get('account_name'),
+                        'bank_name': record.get('bank_name'),
+                        'sort_code': record.get('sort_code'),
+                        'iban': record.get('iban'),
+                        'swift_code': record.get('swift_code'),
+                        'routing_number': record.get('routing_number'),
+                        'bsb_code': record.get('bsb_code'),
+                        'branch_code': record.get('branch_code'),
+                        'branch_address': record.get('branch_address'),
+                        'account_type': record.get('account_type'),
+                        'currency': record.get('currency'),
+                        'balance': record.get('balance'),
+                        'other_details': record.get('other_details')
+                    }
+                else:
+                    # It's an object (from SQLite)
+                    extraction_date = record.extraction_date.strftime('%Y-%m-%d %H:%M:%S') if hasattr(record, 'extraction_date') and record.extraction_date else str(datetime.now())
+                    record_dict = {
+                        'source_pdf': record.source_pdf if hasattr(record, 'source_pdf') else '',
+                        'extraction_date': extraction_date,
+                        'account_number': record.account_number if hasattr(record, 'account_number') else None,
+                        'account_name': record.account_name if hasattr(record, 'account_name') else None,
+                        'bank_name': record.bank_name if hasattr(record, 'bank_name') else None,
+                        'sort_code': record.sort_code if hasattr(record, 'sort_code') else None,
+                        'iban': record.iban if hasattr(record, 'iban') else None,
+                        'swift_code': record.swift_code if hasattr(record, 'swift_code') else None,
+                        'routing_number': record.routing_number if hasattr(record, 'routing_number') else None,
+                        'bsb_code': record.bsb_code if hasattr(record, 'bsb_code') else None,
+                        'branch_code': record.branch_code if hasattr(record, 'branch_code') else None,
+                        'branch_address': record.branch_address if hasattr(record, 'branch_address') else None,
+                        'account_type': record.account_type if hasattr(record, 'account_type') else None,
+                        'currency': record.currency if hasattr(record, 'currency') else None,
+                        'balance': record.balance if hasattr(record, 'balance') else None,
+                        'other_details': record.other_details if hasattr(record, 'other_details') else None
+                    }
+                records_dict.append(record_dict)
             
             # Generate JSON file
             file_path, filename = generate_json_file(records_dict)
@@ -806,3 +924,33 @@ async def download_json(
         logger.error(f"Error in download-json endpoint: {str(e)}")
         logger.error(traceback.format_exc())
         raise HTTPException(status_code=500, detail=str(e)) 
+
+
+@router.get("/export/json")
+async def export_json(
+    background_tasks: BackgroundTasks,
+    token: str = None,
+    use_raw: bool = True,
+    db: AsyncSession = Depends(get_async_db),
+    current_user: UserDB = Depends(get_current_user_required)
+):
+    """
+    Export JSON endpoint (alias for download-json)
+    
+    Args:
+        background_tasks: FastAPI BackgroundTasks
+        token: Authentication token (optional)
+        use_raw: Whether to use raw JSON data instead of structured records
+        db: Database session
+        current_user: Current authenticated user
+        
+    Returns:
+        FileResponse with JSON file
+    """
+    # Just call the existing download-json endpoint
+    return await download_json(
+        background_tasks=background_tasks,
+        use_raw=use_raw,
+        db=db,
+        current_user=current_user
+    ) 

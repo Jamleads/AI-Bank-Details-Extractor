@@ -1,20 +1,18 @@
 """
-API routes for Google Drive integration
+Google Drive integration routes
 """
 import logging
-from typing import Dict, Any, List, Optional
-from datetime import datetime
-
-from fastapi import APIRouter, Depends, HTTPException, Query, Request, Body
+from typing import List, Dict, Any, Optional
+from fastapi import APIRouter, Depends, HTTPException, Request, BackgroundTasks, Query
 from fastapi.responses import RedirectResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from pydantic import BaseModel
-
-from app.db.database import get_db
-from app.db.models import User
-from app.services.auth_service import get_current_user_required
-from app.services.bank_record_service import get_user_records, get_raw_extractions
+from app.db.database import get_async_db
+from app.models.user import UserDB
 from app.services.google_drive_service import GoogleDriveService
+from app.utils.auth import get_current_user_required, get_user_id
+from app.db.operations import get_user_records, get_raw_extractions
+from app.db.header_config import get_header_config
 
 # Setup logging
 logger = logging.getLogger(__name__)
@@ -34,32 +32,30 @@ class DriveExportRequest(BaseModel):
 
 
 @router.get("/auth")
-async def drive_auth(
+async def google_drive_auth(
     request: Request,
-    current_user: User = Depends(get_current_user_required)
+    current_user: UserDB = Depends(get_current_user_required)
 ):
     """
-    Authorize Google Drive access
+    Start Google Drive OAuth flow
     
     Args:
-        request: FastAPI request
+        request: Request object
         current_user: Current authenticated user
         
     Returns:
-        Redirect to Google authorization page
+        Redirect to Google OAuth consent screen
     """
     try:
-        # Get authorization URL
+        # Store user ID in session for callback
+        request.session['drive_auth_user_id'] = get_user_id(current_user)
+        
+        # Get auth URL
         auth_url = GoogleDriveService.get_auth_url(request)
-        
-        # Store user ID in session
-        request.session['drive_auth_user_id'] = current_user.id
-        
-        # Redirect to authorization URL
-        return RedirectResponse(auth_url)
+        return RedirectResponse(url=auth_url)
     except Exception as e:
-        logger.error(f"Error in drive auth endpoint: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error(f"Error in Google Drive auth: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to authenticate with Google Drive: {str(e)}")
 
 
 @router.get("/callback")
@@ -67,7 +63,7 @@ async def drive_callback(
     request: Request,
     code: str = Query(...),
     state: str = Query(...),
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_async_db)
 ):
     """
     Google Drive authorization callback
@@ -108,14 +104,14 @@ async def drive_callback(
 @router.post("/export")
 async def export_to_drive(
     request_data: DriveExportRequest,
-    db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user_required)
+    db: AsyncSession = Depends(get_async_db),
+    current_user: UserDB = Depends(get_current_user_required)
 ):
     """
-    Export bank details to Google Drive
+    Export data to Google Drive
     
     Args:
-        request_data: Request body containing export options
+        request_data: Export request data
         db: Database session
         current_user: Current authenticated user
         
@@ -123,98 +119,42 @@ async def export_to_drive(
         Dictionary with file ID and link
     """
     try:
-        # Extract parameters from request
-        file_name = request_data.file_name
-        format = request_data.format
-        use_raw = request_data.use_raw
-        config_id = request_data.config_id
-        custom_headers = request_data.custom_headers
-        
-        logger.debug(f"Export to Drive endpoint called with file_name={file_name}, format={format}, use_raw={use_raw}, config_id={config_id}")
-        
-        # Check if user has authorized Google Drive
-        credentials = GoogleDriveService.get_stored_credentials(current_user.id)
+        # Check if user has Google Drive credentials
+        credentials = GoogleDriveService.get_stored_credentials(get_user_id(current_user))
         if not credentials:
             raise HTTPException(status_code=401, detail="Google Drive authorization required")
         
-        # Get header configuration if provided
+        # Get header config if specified
+        config_id = request_data.config_id
         header_config = None
         if config_id:
-            from app.services.header_config_service import get_header_config
-            header_config = await get_header_config(config_id, current_user.id, db)
+            header_config = await get_header_config(config_id, get_user_id(current_user), db)
             if not header_config:
-                logger.warning(f"Header configuration with ID {config_id} not found")
-                raise HTTPException(status_code=404, detail="Header configuration not found")
-            logger.debug(f"Using header configuration: {header_config.name}")
+                raise HTTPException(status_code=404, detail=f"Header configuration with ID {config_id} not found")
         
-        if use_raw:
+        # Get data to export
+        if request_data.use_raw:
             # Get raw extractions
-            raw_extractions = await get_raw_extractions(current_user.id, db)
-            
+            raw_extractions = await get_raw_extractions(get_user_id(current_user), db)
             if not raw_extractions:
-                logger.warning("No raw extractions found for export")
-                raise HTTPException(
-                    status_code=400, 
-                    detail="No raw extractions found. Please process some PDFs first."
-                )
+                raise HTTPException(status_code=404, detail="No data available to export")
             
-            logger.debug(f"Found {len(raw_extractions)} raw extractions for export")
-            
-            # Extract all bank details from raw extractions
-            all_bank_details = []
+            # Prepare data for export
+            data = []
             for extraction in raw_extractions:
-                raw_data = extraction['raw_data']
-                source_pdf = extraction['source_pdf']
-                extraction_date = extraction['extraction_date'].strftime('%Y-%m-%d %H:%M:%S')
-                
-                if 'bank_details' in raw_data and isinstance(raw_data['bank_details'], list):
-                    for bank_detail in raw_data['bank_details']:
-                        # Add source_pdf and extraction_date to each bank detail
-                        bank_detail['source_pdf'] = source_pdf
-                        bank_detail['extraction_date'] = extraction_date
-                        all_bank_details.append(bank_detail)
-                else:
-                    # If no bank_details field, add the entire raw data as a record
-                    record = {'source_pdf': source_pdf, 'extraction_date': extraction_date}
-                    record.update(raw_data)
-                    all_bank_details.append(record)
-            
-            if not all_bank_details:
-                logger.warning("No bank details found in raw extractions")
-                raise HTTPException(
-                    status_code=400, 
-                    detail="No bank details found in raw extractions."
-                )
-            
-            # Export to Google Drive
-            result = GoogleDriveService.export_to_drive(
-                user_id=current_user.id,
-                data=all_bank_details,
-                file_name=file_name,
-                format=format,
-                custom_headers=custom_headers
-            )
-            
-            return result
+                if 'raw_data' in extraction and 'bank_details' in extraction['raw_data']:
+                    data.extend(extraction['raw_data']['bank_details'])
         else:
             # Get structured records
-            records = await get_user_records(current_user.id, db)
-            
+            records = await get_user_records(get_user_id(current_user), db)
             if not records:
-                logger.warning("No records found for export")
-                raise HTTPException(
-                    status_code=400, 
-                    detail="No records found. Please process some PDFs first."
-                )
+                raise HTTPException(status_code=404, detail="No records available to export")
             
-            logger.debug(f"Found {len(records)} records for export")
-            
-            # Convert records to dict
-            records_dict = []
+            # Convert records to dict for export
+            data = []
             for record in records:
-                records_dict.append({
+                data.append({
                     'source_pdf': record.source_pdf,
-                    'extraction_date': record.extraction_date.strftime('%Y-%m-%d %H:%M:%S'),
                     'account_number': record.account_number,
                     'account_name': record.account_name,
                     'bank_name': record.bank_name,
@@ -230,24 +170,19 @@ async def export_to_drive(
                     'balance': record.balance,
                     'other_details': record.other_details
                 })
-            
-            # Apply header mapping if header config is provided
-            if header_config:
-                from app.services.header_config_service import apply_header_mapping
-                records_dict = apply_header_mapping(records_dict, header_config.header_mappings)
-            
-            # Export to Google Drive
-            result = GoogleDriveService.export_to_drive(
-                user_id=current_user.id,
-                data=records_dict,
-                file_name=file_name,
-                format=format,
-                custom_headers=custom_headers
-            )
-            
-            return result
+        
+        # Export to Google Drive
+        result = GoogleDriveService.export_to_drive(
+            user_id=get_user_id(current_user),
+            data=data,
+            file_name=request_data.file_name,
+            format=request_data.format,
+            custom_headers=request_data.custom_headers
+        )
+        
+        return result
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Error in export to Drive endpoint: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error(f"Error exporting to Google Drive: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to export to Google Drive: {str(e)}")

@@ -27,6 +27,16 @@ class HeaderConfigUpdate(BaseModel):
     is_default: Optional[bool] = None
 
 
+class HeaderConfigResponse(HeaderConfigBase):
+    """Response model for a header configuration"""
+    id: int
+    user_id: int
+
+    class Config:
+        """Pydantic config"""
+        from_attributes = True
+
+
 class HeaderConfig(HeaderConfigBase):
     """Model for a header configuration"""
     id: int
@@ -36,7 +46,7 @@ class HeaderConfig(HeaderConfigBase):
 
     class Config:
         """Pydantic config"""
-        orm_mode = True
+        from_attributes = True
 
 
 class DefaultHeaders(BaseModel):

@@ -1,19 +1,20 @@
 """
 Payment API routes
 """
-from fastapi import APIRouter, Depends, HTTPException, Request, BackgroundTasks
-from sqlalchemy.orm import Session
-from typing import Dict, Any, List
+import logging
+from typing import List, Dict, Any
+from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks, Request
+from sqlalchemy.ext.asyncio import AsyncSession
+from app.db.database import get_async_db
+from app.models.user import UserDB
+from app.models.payment import PaymentCreate, PaymentResponse, PricingTier
+from app.utils.auth import get_current_user_required, get_user_id
+from app.db import payment as payment_crud
+from app.models.payment import PaymentStatus
 from datetime import datetime
 from pydantic import BaseModel
-
-from app.db.database import get_db
-from app.db import payment as payment_crud
-from app.models.payment import PaymentCreate, PaymentResponse, PaymentStatus, PricingTier
-from app.models.user import UserDB
-from app.api.auth import get_current_user
 from app.services.yativo import yativo_service
-from app.db.models import User, SubscriptionTier
+from app.db.models import User as UserDBModel, SubscriptionTier
 
 router = APIRouter()
 
@@ -35,8 +36,8 @@ class PaymentInitiateRequest(BaseModel):
 @router.post("/initiate", response_model=PaymentResponse)
 async def initiate_payment(
     request: PaymentInitiateRequest,
-    db: Session = Depends(get_db),
-    current_user: UserDB = Depends(get_current_user)
+    db: AsyncSession = Depends(get_async_db),
+    current_user: UserDB = Depends(get_current_user_required)
 ):
     """Initiate a payment for a specific tier"""
     # Get tier and country code from request
@@ -54,8 +55,8 @@ async def initiate_payment(
     # Free tier doesn't need payment processing
     if amount == 0:
         # Create a completed payment record for tracking
-        db_payment = payment_crud.create_payment(db, current_user.id, 0, "USD", tier)
-        payment_crud.update_payment_status(db, db_payment.id, PaymentStatus.COMPLETED)
+        db_payment = await payment_crud.create_payment(db, get_user_id(current_user), 0, "USD", tier)
+        await payment_crud.update_payment_status(db, db_payment.id, PaymentStatus.COMPLETED)
         
         # Update user's subscription tier
         await process_successful_payment(db_payment.id, db)
@@ -70,11 +71,11 @@ async def initiate_payment(
         )
     
     # Create initial payment record
-    db_payment = payment_crud.create_payment(db, current_user.id, amount, "USD", tier)
+    db_payment = await payment_crud.create_payment(db, get_user_id(current_user), amount, "USD", tier)
     
     # Get currencies supported for the country
     try:
-        currencies = yativo_service.get_payin_currencies(country_code)
+        currencies = await yativo_service.get_payin_currencies(country_code)
         if not currencies:
             raise HTTPException(status_code=400, detail=f"No payment methods available for {country_code}")
         
@@ -82,7 +83,7 @@ async def initiate_payment(
         currency = "USD" if "USD" in currencies else currencies[0]
         
         # Get payment gateways for the currency and country
-        gateways = yativo_service.get_payin_gateways(country_code, currency)
+        gateways = await yativo_service.get_payin_gateways(country_code, currency)
         if not gateways:
             raise HTTPException(status_code=400, detail=f"No payment gateways available for {country_code} and {currency}")
         
@@ -90,15 +91,15 @@ async def initiate_payment(
         gateway_id = gateways[0]["id"]
         
         # Create or get Yativo customer
-        customer_data = yativo_service.create_customer(
-            user_id=str(current_user.id),
+        customer_data = await yativo_service.create_customer(
+            user_id=str(get_user_id(current_user)),
             email=current_user.email,
             name=current_user.name
         )
         customer_id = customer_data.get("id")
         
         # Create deposit in Yativo
-        deposit_data = yativo_service.create_deposit(
+        deposit_data = await yativo_service.create_deposit(
             amount=amount,
             currency=currency,
             gateway_id=gateway_id,
@@ -111,7 +112,7 @@ async def initiate_payment(
         payment_method = f"Gateway_{gateway_id}"
         
         # Update payment record with Yativo details
-        payment_crud.update_payment_yativo_details(
+        await payment_crud.update_payment_yativo_details(
             db,
             db_payment.id,
             yativo_deposit_id=deposit_id,
@@ -133,44 +134,44 @@ async def initiate_payment(
         
     except Exception as e:
         # Update payment status to failed
-        payment_crud.update_payment_status(db, db_payment.id, PaymentStatus.FAILED)
+        await payment_crud.update_payment_status(db, db_payment.id, PaymentStatus.FAILED)
         raise HTTPException(status_code=500, detail=str(e))
 
 
 @router.get("/status/{payment_id}", response_model=PaymentResponse)
 async def get_payment_status(
     payment_id: int,
-    db: Session = Depends(get_db),
-    current_user: UserDB = Depends(get_current_user)
+    db: AsyncSession = Depends(get_async_db),
+    current_user: UserDB = Depends(get_current_user_required)
 ):
     """Get payment status"""
-    db_payment = payment_crud.get_payment(db, payment_id)
+    db_payment = await payment_crud.get_payment(db, payment_id)
     if not db_payment:
         raise HTTPException(status_code=404, detail="Payment not found")
     
     # Check if this payment belongs to the current user
-    if db_payment.user_id != current_user.id:
+    if db_payment.user_id != get_user_id(current_user):
         raise HTTPException(status_code=403, detail="Not authorized to view this payment")
     
     # If payment is pending and has a Yativo deposit ID, check status from Yativo
     if db_payment.status == PaymentStatus.PENDING.value and db_payment.yativo_deposit_id:
         try:
-            transaction_data = yativo_service.get_transaction(db_payment.yativo_deposit_id)
+            transaction_data = await yativo_service.get_transaction(db_payment.yativo_deposit_id)
             status = transaction_data.get("status", "").lower()
             
             # Map Yativo status to our status
             if status in ("completed", "success"):
-                payment_crud.update_payment_status(db, db_payment.id, PaymentStatus.COMPLETED)
+                await payment_crud.update_payment_status(db, db_payment.id, PaymentStatus.COMPLETED)
                 db_payment.status = PaymentStatus.COMPLETED.value
                 
                 # Update user's subscription tier
                 await process_successful_payment(db_payment.id, db)
                 
             elif status in ("failed", "error"):
-                payment_crud.update_payment_status(db, db_payment.id, PaymentStatus.FAILED)
+                await payment_crud.update_payment_status(db, db_payment.id, PaymentStatus.FAILED)
                 db_payment.status = PaymentStatus.FAILED.value
             elif status == "expired":
-                payment_crud.update_payment_status(db, db_payment.id, PaymentStatus.EXPIRED)
+                await payment_crud.update_payment_status(db, db_payment.id, PaymentStatus.EXPIRED)
                 db_payment.status = PaymentStatus.EXPIRED.value
         except Exception:
             # If there's an error checking status, just return current status
@@ -189,11 +190,11 @@ async def get_payment_status(
 
 @router.get("/history", response_model=List[PaymentResponse])
 async def get_payment_history(
-    db: Session = Depends(get_db),
-    current_user: UserDB = Depends(get_current_user)
+    db: AsyncSession = Depends(get_async_db),
+    current_user: UserDB = Depends(get_current_user_required)
 ):
     """Get payment history for current user"""
-    payments = payment_crud.get_payments_by_user(db, current_user.id)
+    payments = await payment_crud.get_payments_by_user(db, get_user_id(current_user))
     return [
         PaymentResponse(
             id=payment.id,
@@ -212,7 +213,7 @@ async def get_payment_history(
 async def yativo_webhook(
     request: Request,
     background_tasks: BackgroundTasks,
-    db: Session = Depends(get_db)
+    db: AsyncSession = Depends(get_async_db)
 ):
     """Webhook endpoint for Yativo payment notifications"""
     payload = await request.json()
@@ -227,31 +228,31 @@ async def yativo_webhook(
     
     if deposit_id and status:
         # Find payment by Yativo deposit ID
-        db_payment = payment_crud.get_payment_by_yativo_deposit_id(db, deposit_id)
+        db_payment = await payment_crud.get_payment_by_yativo_deposit_id(db, deposit_id)
         if db_payment:
             # Update payment status based on webhook data
             if status in ("completed", "success"):
-                payment_crud.update_payment_status(db, db_payment.id, PaymentStatus.COMPLETED)
+                await payment_crud.update_payment_status(db, db_payment.id, PaymentStatus.COMPLETED)
                 # Process the successful payment (update user subscription)
                 background_tasks.add_task(process_successful_payment, db_payment.id, db)
             elif status in ("failed", "error"):
-                payment_crud.update_payment_status(db, db_payment.id, PaymentStatus.FAILED)
+                await payment_crud.update_payment_status(db, db_payment.id, PaymentStatus.FAILED)
             elif status == "expired":
-                payment_crud.update_payment_status(db, db_payment.id, PaymentStatus.EXPIRED)
+                await payment_crud.update_payment_status(db, db_payment.id, PaymentStatus.EXPIRED)
     
     # Always return success to acknowledge receipt of webhook
     return {"status": "success"}
 
 
-async def process_successful_payment(payment_id: int, db: Session):
+async def process_successful_payment(payment_id: int, db: AsyncSession):
     """Process successful payment (grant access, send confirmation, etc.)"""
     # Get the payment
-    db_payment = payment_crud.get_payment(db, payment_id)
+    db_payment = await payment_crud.get_payment(db, payment_id)
     if not db_payment:
         return
     
     # Get the user
-    user = db.query(User).filter(User.id == db_payment.user_id).first()
+    user = await db.query(UserDBModel).filter(UserDBModel.id == db_payment.user_id).first()
     if not user:
         return
     
@@ -267,7 +268,7 @@ async def process_successful_payment(payment_id: int, db: Session):
     if db_payment.tier in tier_mapping:
         user.subscription_tier = tier_mapping[db_payment.tier]
         user.subscription_updated_at = datetime.now()
-        db.commit()
+        await db.commit()
     
     # Here you could also:
     # 1. Send confirmation email
