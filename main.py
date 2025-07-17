@@ -23,6 +23,7 @@ from app.core.config import settings
 from app.db import init_db
 from app.services.auth_service import oauth, get_current_user
 from app.db.models import User
+from app.core.admin_config import is_admin_email
 
 # Configure logging
 logging.basicConfig(
@@ -133,6 +134,171 @@ app.include_router(header_config_router)
 app.include_router(drive_router)
 app.include_router(payment_router, prefix="/api/payment", tags=["payment"])
 
+# Create and include admin router
+from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy import func, select
+from app.db.database import get_async_db
+from app.db.models import User, BankRecord, RawExtraction
+from app.db.adapter import db as db_adapter
+
+admin_router = APIRouter(prefix="/api/admin", tags=["admin"])
+
+@admin_router.get("/users")
+async def get_users(
+    request: Request,
+    db = Depends(get_async_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Get all users with their stats"""
+    # Check if user is admin
+    user_email = get_user_email(current_user)
+    if not user_email or not is_admin_email(user_email):
+        raise HTTPException(status_code=403, detail="Admin access required")
+    
+    try:
+        # For DynamoDB users, we'll use a different approach
+        if db_adapter.db_type != "sqlite":
+            # Get all users from DynamoDB
+            users = db_adapter._db_provider.get_all_users()
+            
+            # Format the response
+            users_list = []
+            for user in users:
+                # Get counts for each user
+                user_id = user.get("id")
+                bank_records = db_adapter._db_provider.get_bank_records_by_user(user_id)
+                extractions = db_adapter._db_provider.get_raw_extractions_by_user(user_id)
+                
+                users_list.append({
+                    "id": user_id,
+                    "email": user.get("email"),
+                    "name": user.get("name"),
+                    "google_id": user.get("google_id"),
+                    "subscription_tier": user.get("subscription_tier", "FREE").upper(),
+                    "created_at": user.get("created_at"),
+                    "last_login": user.get("last_login"),
+                    "bank_records_count": len(bank_records),
+                    "extractions_count": len(extractions),
+                    "is_admin": is_admin_email(user.get("email", "")) if user.get("email") else False
+                })
+            
+            return users_list
+        
+        # For SQLite, use raw SQL to avoid enum issues
+        query = """
+            SELECT 
+                u.id, u.email, u.google_id, u.name, u.picture, 
+                u.created_at, u.last_login, u.subscription_tier,
+                u.subscription_updated_at,
+                COUNT(DISTINCT b.id) as bank_records_count,
+                COUNT(DISTINCT r.id) as extractions_count
+            FROM 
+                users u
+            LEFT JOIN 
+                bank_records b ON u.id = b.user_id
+            LEFT JOIN 
+                raw_extractions r ON u.id = r.user_id
+            GROUP BY 
+                u.id
+        """
+        
+        result = await db.execute(query)
+        rows = await result.fetchall()
+        
+        # Format the response
+        users_list = []
+        for row in rows:
+            # Convert subscription_tier to uppercase if it's a string
+            subscription_tier = row[7]  # subscription_tier is at index 7
+            if isinstance(subscription_tier, str):
+                subscription_tier = subscription_tier.upper()
+            
+            users_list.append({
+                "id": row[0],
+                "email": row[1],
+                "name": row[3],
+                "google_id": row[2],
+                "subscription_tier": subscription_tier,
+                "created_at": row[5].isoformat() if row[5] else None,
+                "last_login": row[6].isoformat() if row[6] else None,
+                "bank_records_count": row[9],
+                "extractions_count": row[10],
+                "is_admin": is_admin_email(row[1]) if row[1] else False
+            })
+        
+        return users_list
+    except Exception as e:
+        logger.error(f"Error getting users: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to get users: {str(e)}")
+
+@admin_router.get("/stats")
+async def get_stats(
+    request: Request,
+    db = Depends(get_async_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Get system statistics"""
+    # Check if user is admin
+    user_email = get_user_email(current_user)
+    if not user_email or not is_admin_email(user_email):
+        raise HTTPException(status_code=403, detail="Admin access required")
+    
+    try:
+        if db_adapter.db_type != "sqlite":
+            # For DynamoDB, use the adapter
+            users = db_adapter._db_provider.get_all_users()
+            users_count = len(users)
+            
+            # This is inefficient but works for small datasets
+            bank_records_count = 0
+            extractions_count = 0
+            for user in users:
+                user_id = user.get("id")
+                bank_records = db_adapter._db_provider.get_bank_records_by_user(user_id)
+                extractions = db_adapter._db_provider.get_raw_extractions_by_user(user_id)
+                bank_records_count += len(bank_records)
+                extractions_count += len(extractions)
+        else:
+            # For SQLite, use raw SQL queries
+            users_count_query = "SELECT COUNT(*) FROM users"
+            bank_records_count_query = "SELECT COUNT(*) FROM bank_records"
+            extractions_count_query = "SELECT COUNT(*) FROM raw_extractions"
+            
+            users_count_result = await db.execute(users_count_query)
+            users_count = await users_count_result.scalar()
+            
+            bank_records_count_result = await db.execute(bank_records_count_query)
+            bank_records_count = await bank_records_count_result.scalar()
+            
+            extractions_count_result = await db.execute(extractions_count_query)
+            extractions_count = await extractions_count_result.scalar()
+        
+        return {
+            "users_count": users_count or 0,
+            "bank_records_count": bank_records_count or 0,
+            "extractions_count": extractions_count or 0
+        }
+    except Exception as e:
+        logger.error(f"Error getting stats: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to get stats: {str(e)}")
+
+# Add endpoint to check if user is admin
+@app.get("/api/user/is-admin")
+async def check_is_admin(
+    request: Request,
+    current_user: User = Depends(get_current_user)
+):
+    """Check if the current user is an admin"""
+    is_admin = False
+    if current_user:
+        user_email = get_user_email(current_user)
+        if user_email:
+            is_admin = is_admin_email(user_email)
+    return {"is_admin": is_admin}
+
+# Include admin router
+app.include_router(admin_router)
+
 # Initialize OAuth
 app.state.oauth = oauth
 
@@ -153,12 +319,20 @@ async def index(request: Request, current_user: User = Depends(get_current_user)
     # Normalize user data
     user_data = normalize_user_data(current_user)
     
+    # Check if user is admin
+    is_admin = False
+    user_email = get_user_email(current_user)
+    if user_email:
+        is_admin = is_admin_email(user_email)
+        logger.debug(f"User {user_email} is_admin: {is_admin}")
+    
     return templates.TemplateResponse(
         "index.html", 
         {
             "request": request, 
             "current_user": user_data,
-            "auth_token": auth_token
+            "auth_token": auth_token,
+            "is_admin": is_admin
         }
     )
 
@@ -256,6 +430,40 @@ async def privacy_page(request: Request, current_user: User = Depends(get_curren
     
     return templates.TemplateResponse(
         "privacy.html", 
+        {
+            "request": request, 
+            "current_user": user_data,
+            "auth_token": auth_token
+        }
+    )
+
+# Add admin page route
+@app.get("/admin")
+async def admin_page(request: Request, current_user: User = Depends(get_current_user)):
+    """Admin page - requires admin authentication"""
+    logger.debug("Admin page route called")
+    if not current_user:
+        logger.debug("No current user, redirecting to login")
+        return RedirectResponse(url="/login", status_code=status.HTTP_302_FOUND)
+    
+    # Get user email (handling both dict and object formats)
+    user_email = get_user_email(current_user)
+    
+    # Check if user is admin
+    if not user_email or not is_admin_email(user_email):
+        logger.warning(f"Unauthorized admin access attempt by {user_email}")
+        raise HTTPException(status_code=403, detail="Admin access required")
+    
+    logger.debug(f"Admin authenticated: {user_email}")
+    
+    # Get auth token from cookie
+    auth_token = request.cookies.get("access_token", "")
+    
+    # Normalize user data
+    user_data = normalize_user_data(current_user)
+    
+    return templates.TemplateResponse(
+        "admin.html", 
         {
             "request": request, 
             "current_user": user_data,

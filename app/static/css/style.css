@@ -799,3 +799,17 @@ body {
         flex-direction: column;
     }
 }
+
+/* Admin link styling */
+.admin-link {
+    background-color: #fce4ec;
+    color: #880e4f !important;
+    font-weight: 600;
+    border-radius: 4px;
+    padding: 5px 10px !important;
+    transition: background-color 0.3s;
+}
+
+.admin-link:hover {
+    background-color: #f8bbd0;
+}

@@ -29,6 +29,11 @@
                     <a href="/" class="nav-link">Home</a>
                     <a href="/header-config" class="nav-link">Header Config</a>
                     <a href="/pricing" class="nav-link">Pricing</a>
+                    {% if is_admin %}
+                    <a href="/admin" class="nav-link admin-link">
+                        <i class="fas fa-user-shield"></i> Admin
+                    </a>
+                    {% endif %}
                     <a href="/auth/logout" class="logout-btn">
                         <i class="fas fa-sign-out-alt"></i> Logout
                     </a>
@@ -53,6 +58,11 @@
                     <a href="/pricing" class="mobile-nav-link">
                         <i class="fas fa-tags"></i> Pricing
                     </a>
+                    {% if is_admin %}
+                    <a href="/admin" class="mobile-nav-link admin-link">
+                        <i class="fas fa-user-shield"></i> Admin
+                    </a>
+                    {% endif %}
                     <a href="/auth/logout" class="mobile-nav-link">
                         <i class="fas fa-sign-out-alt"></i> Logout
                     </a>

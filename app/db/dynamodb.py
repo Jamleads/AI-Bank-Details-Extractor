@@ -680,6 +680,16 @@ class DynamoDBService:
             KeyConditionExpression=Key('user_id').eq(user_id)
         )
         return response.get('Items', [])
+        
+    def get_all_users(self) -> List[Dict[str, Any]]:
+        """Get all users from the database
+        
+        Returns:
+            List of all users
+        """
+        table = self.dynamodb.Table(USERS_TABLE)
+        response = table.scan()
+        return response.get('Items', [])
 
     def delete_raw_extractions_by_user(self, user_id: str) -> int:
         """Delete all raw extractions for a user"""

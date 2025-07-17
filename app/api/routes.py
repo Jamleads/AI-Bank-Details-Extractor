@@ -30,6 +30,7 @@ from app.db.operations import (
 )
 from app.db.header_config import get_header_config, ensure_default_config
 from datetime import datetime
+from app.core.admin_config import is_admin_email
 
 # Setup logging
 logger = logging.getLogger(__name__)
@@ -757,3 +758,25 @@ async def export_json(
         db=db,
         current_user=current_user
     ) 
+
+
+@router.get("/user/is-admin")
+async def check_is_admin(
+    current_user: UserDB = Depends(get_current_user_required)
+):
+    """
+    Check if the current user is an admin
+    
+    Args:
+        current_user: Current authenticated user
+        
+    Returns:
+        Dictionary with is_admin status
+    """
+    is_admin = False
+    if current_user:
+        # Handle both object and dictionary access
+        email = current_user.get('email') if isinstance(current_user, dict) else getattr(current_user, 'email', None)
+        if email:
+            is_admin = is_admin_email(email)
+    return {"is_admin": is_admin} 
