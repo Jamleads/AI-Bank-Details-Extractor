@@ -28,7 +28,6 @@ async function testDriveExport() {
             body: JSON.stringify({
                 file_name: 'test_export.csv',
                 format: 'csv',
-                use_raw: true
             })
         });
 

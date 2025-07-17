@@ -247,7 +247,6 @@ class GoogleDriveService:
             data: Data to export
             file_name: Name of the file in Google Drive
             format: File format (csv or xlsx)
-            custom_headers: Optional comma-separated custom headers
             
         Returns:
             Dictionary with file ID and link
@@ -255,7 +254,7 @@ class GoogleDriveService:
         try:
             # Generate file based on format
             if format.lower() == 'csv':
-                file_path, _ = generate_csv_file(data, custom_headers)
+                file_path, _ = generate_csv_file(data)
                 mime_type = 'text/csv'
             else:
                 file_path, _ = generate_json_file(data)

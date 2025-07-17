@@ -1,106 +1,76 @@
 [
     {
-        "id": "fc530efa-2a09-4821-b482-096d8acb1012",
+        "other_details": {
+            "CLABE Account": "072680002313262813"
+        },
+        "account_number": "231326281",
+        "account_type": "Dollars Account",
+        "swift_code": "SAMENOMXMTXXX",
+        "sort_code": null,
+        "routing_number": null,
+        "branch_code": null,
+        "balance": null,
+        "account_name": "DAIDALOS AEROSPACE SAPI DE CV",
+        "iban": null,
+        "bank_name": "Banco Mercantil del Norte",
+        "branch_address": null,
+        "currency": "USD",
+        "bsb_code": null,
         "source_pdf": "CUENTA_DAIDALOS_BANORTE",
-        "user_id": "1c273178-14d9-4dca-af95-b4df86c49a79",
-        "raw_data": {
-            "bank_details": [
-                {
-                    "other_details": "CLABE Account: 072 680 002313262813",
-                    "account_number": "231326281",
-                    "account_type": "Dollars Account",
-                    "swift_code": "SAMENOMXMTXXX",
-                    "sort_code": null,
-                    "routing_number": null,
-                    "branch_code": null,
-                    "balance": null,
-                    "account_name": "DAIDALOS AEROSPACE SAPI DE CV",
-                    "iban": "072680002313262813",
-                    "bank_name": "Banco Mercantil del Norte",
-                    "branch_address": null,
-                    "currency": "USD",
-                    "bsb_code": null
-                }
-            ]
-        },
-        "extraction_date": "2025-07-16T23:47:43.090310"
+        "extraction_date": "2025-07-17T01: 04: 05.837990"
     },
     {
-        "id": "bb4fab69-6ff4-4eec-b8b9-235ec991ed17",
-        "source_pdf": "Prepayment",
-        "user_id": "1c273178-14d9-4dca-af95-b4df86c49a79",
-        "raw_data": {
-            "bank_details": [
-                {
-                    "other_details": null,
-                    "account_number": null,
-                    "account_type": null,
-                    "swift_code": "HABALV22",
-                    "sort_code": null,
-                    "routing_number": null,
-                    "branch_code": null,
-                    "balance": null,
-                    "account_name": "FedEx Express Latvia SIA",
-                    "iban": "LV15HABA0551053981120",
-                    "bank_name": "Swedbank AS",
-                    "branch_address": null,
-                    "currency": "EUR",
-                    "bsb_code": null
-                }
-            ]
-        },
-        "extraction_date": "2025-07-16T23:39:21.337619"
-    },
-    {
-        "id": "918a1026-92df-4325-a7cb-45a9b48045c5",
-        "source_pdf": "Prepayment",
-        "user_id": "1c273178-14d9-4dca-af95-b4df86c49a79",
-        "raw_data": {
-            "bank_details": [
-                {
-                    "other_details": "Company code for payment reference: 40003450257",
-                    "account_number": "LV15HABA0551053981120",
-                    "account_type": null,
-                    "swift_code": "HABALV22",
-                    "sort_code": null,
-                    "routing_number": null,
-                    "branch_code": null,
-                    "balance": "27.95",
-                    "account_name": "FedEx Express Latvia SIA",
-                    "iban": "LV15HABA0551053981120",
-                    "bank_name": "Swedbank AS",
-                    "branch_address": null,
-                    "currency": "EUR",
-                    "bsb_code": null
-                }
-            ]
-        },
-        "extraction_date": "2025-07-16T23:39:33.218536"
-    },
-    {
-        "id": "f4e50f16-d922-4598-87af-c1abe4d11765",
+        "other_details": "CLABE (Mexican interbank code) provided as IBAN.",
+        "account_number": "231326281",
+        "account_type": "Dollars Account",
+        "swift_code": "SAMENOMXMTXXX",
+        "sort_code": null,
+        "routing_number": null,
+        "branch_code": null,
+        "balance": null,
+        "account_name": "DAIDALOS AEROSPACE SAPI DE CV",
+        "iban": "072 680 002313262813",
+        "bank_name": "Banco Mercantil del Norte",
+        "branch_address": null,
+        "currency": "USD",
+        "bsb_code": null,
         "source_pdf": "CUENTA_DAIDALOS_BANORTE",
-        "user_id": "1c273178-14d9-4dca-af95-b4df86c49a79",
-        "raw_data": {
-            "bank_details": [
-                {
-                    "other_details": null,
-                    "account_number": "231326281",
-                    "account_type": "Dollars Account",
-                    "swift_code": "SAMENOMXMTXXX",
-                    "sort_code": null,
-                    "routing_number": null,
-                    "branch_code": null,
-                    "balance": null,
-                    "account_name": "DAIDALOS AEROSPACE SAPI DE CV",
-                    "iban": "072 680 002313262813",
-                    "bank_name": "Banco Mercantil del Norte",
-                    "branch_address": null,
-                    "currency": "Dollars",
-                    "bsb_code": null
-                }
-            ]
-        },
-        "extraction_date": "2025-07-16T23:48:09.987248"
+        "extraction_date": "2025-07-17T01: 03: 55.464180"
+    },
+    {
+        "other_details": null,
+        "account_number": "231326281",
+        "account_type": "Dollars Account",
+        "swift_code": "SAMENOMXMTXXX",
+        "sort_code": null,
+        "routing_number": null,
+        "branch_code": null,
+        "balance": null,
+        "account_name": "DAIDALOS AEROSPACE SAPI DE CV",
+        "iban": "072 680 002313262813",
+        "bank_name": "Banco Mercantil del Norte",
+        "branch_address": null,
+        "currency": "USD",
+        "bsb_code": null,
+        "source_pdf": "CUENTA_DAIDALOS_BANORTE",
+        "extraction_date": "2025-07-17T01: 04: 21.471176"
+    },
+    {
+        "other_details": null,
+        "account_number": "231326281",
+        "account_type": "DOLLARS ACCOUNT",
+        "swift_code": "SAMENOMXMTXXX",
+        "sort_code": null,
+        "routing_number": null,
+        "branch_code": null,
+        "balance": null,
+        "account_name": "DAIDALOS AEROSPACE SAPI DE CV",
+        "iban": "072680002313262813",
+        "bank_name": "Banco Mercantil del Norte",
+        "branch_address": null,
+        "currency": "USD",
+        "bsb_code": null,
+        "source_pdf": "CUENTA_DAIDALOS_BANORTE",
+        "extraction_date": "2025-07-17T01: 04: 14.197992"
     }
 ]

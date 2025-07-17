@@ -26,7 +26,6 @@ class DriveExportRequest(BaseModel):
     """Request model for Drive export"""
     file_name: str
     format: str = "csv"
-    use_raw: bool = False
     config_id: Optional[int] = None
     custom_headers: Optional[str] = None
 
@@ -132,44 +131,15 @@ async def export_to_drive(
             if not header_config:
                 raise HTTPException(status_code=404, detail=f"Header configuration with ID {config_id} not found")
         
-        # Get data to export
-        if request_data.use_raw:
-            # Get raw extractions
-            raw_extractions = await get_raw_extractions(get_user_id(current_user), db)
-            if not raw_extractions:
-                raise HTTPException(status_code=404, detail="No data available to export")
-            
-            # Prepare data for export
-            data = []
-            for extraction in raw_extractions:
-                if 'raw_data' in extraction and 'bank_details' in extraction['raw_data']:
-                    data.extend(extraction['raw_data']['bank_details'])
-        else:
-            # Get structured records
-            records = await get_user_records(get_user_id(current_user), db)
-            if not records:
-                raise HTTPException(status_code=404, detail="No records available to export")
-            
-            # Convert records to dict for export
-            data = []
-            for record in records:
-                data.append({
-                    'source_pdf': record.source_pdf,
-                    'account_number': record.account_number,
-                    'account_name': record.account_name,
-                    'bank_name': record.bank_name,
-                    'sort_code': record.sort_code,
-                    'iban': record.iban,
-                    'swift_code': record.swift_code,
-                    'routing_number': record.routing_number,
-                    'bsb_code': record.bsb_code,
-                    'branch_code': record.branch_code,
-                    'branch_address': record.branch_address,
-                    'account_type': record.account_type,
-                    'currency': record.currency,
-                    'balance': record.balance,
-                    'other_details': record.other_details
-                })
+        raw_extractions = await get_raw_extractions(get_user_id(current_user), db)
+        if not raw_extractions:
+            raise HTTPException(status_code=404, detail="No data available to export")
+        
+        # Prepare data for export
+        data = []
+        for extraction in raw_extractions:
+            if 'raw_data' in extraction and 'bank_details' in extraction['raw_data']:
+                data.extend(extraction['raw_data']['bank_details'])
         
         # Export to Google Drive
         result = GoogleDriveService.export_to_drive(

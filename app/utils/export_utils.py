@@ -14,7 +14,6 @@ logger.setLevel(logging.DEBUG)
 
 def generate_csv_file(
     data: List[Dict[str, Any]], 
-    custom_headers: Optional[str] = None
 ) -> Tuple[str, str]:
     """
     Generate a CSV file from data
@@ -33,25 +32,15 @@ def generate_csv_file(
         with tempfile.NamedTemporaryFile(delete=False, suffix='.csv') as temp_file:
             file_path = temp_file.name
         
-        # Get headers
-        if custom_headers:
-            # Use custom headers if provided
-            headers = [h.strip() for h in custom_headers.split(',')]
-        else:
-            # Get all possible headers from data
-            all_headers = set()
-            for record in data:
-                all_headers.update(record.keys())
-            
-            # Sort headers to ensure 'source_pdf' and 'extraction_date' come first
-            headers = ['source_pdf', 'extraction_date']
-            for header in sorted(all_headers):
-                if header not in headers:
-                    headers.append(header)
+
+        # Get all possible headers from data
+        all_headers = set()
+        for record in data:
+            all_headers.update(record.keys())
         
         # Write CSV
         with open(file_path, 'w') as f:
-            writer = csv.DictWriter(f, fieldnames=headers, extrasaction='ignore')
+            writer = csv.DictWriter(f, fieldnames=all_headers, extrasaction='ignore')
             writer.writeheader()
             
             for record in data:

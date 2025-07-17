@@ -755,9 +755,9 @@ function downloadExport() {
     let url = '';
 
     if (format === 'json') {
-        url = `/api/download-json?use_raw=${isRawData}`;
+        url = `/api/download-json`;
     } else {
-        url = `/api/download-csv?format=${format}&use_raw=${isRawData}`;
+        url = `/api/download-csv?format=${format}`;
 
         if (headerConfigId) {
             url += `&config_id=${headerConfigId}`;
@@ -804,7 +804,6 @@ async function exportToDrive() {
             body: JSON.stringify({
                 file_name: fileName,
                 format: format,
-                use_raw: isRawData,
                 config_id: headerConfigId || undefined,
                 custom_headers: useCustomHeader && !headerConfigId ? customHeaders : null
             })
