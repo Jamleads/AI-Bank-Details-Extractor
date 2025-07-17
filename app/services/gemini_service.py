@@ -29,7 +29,8 @@ class GeminiService:
         """Initialize the Gemini service with API key"""
         logger.debug("Initializing Gemini service")
         try:
-            genai.configure(api_key=settings.API_KEY)
+            genai.configure(api_key="AIzaSyCrjP4HBMC0RataUj4sThVhVjJZe1xTfXo")
+            print(f"\n\n\n\n\n\nAPI Key: {settings.API_KEY}\n\n\n\n\n")
             self.model = genai.GenerativeModel('gemini-2.5-flash-preview-05-20')
             logger.debug("Gemini service initialized successfully")
         except Exception as e:

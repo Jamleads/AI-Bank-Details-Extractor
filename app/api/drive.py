@@ -13,6 +13,8 @@ from app.services.google_drive_service import GoogleDriveService
 from app.utils.auth import get_current_user_required, get_user_id
 from app.db.operations import get_user_records, get_raw_extractions
 from app.db.header_config import get_header_config
+from datetime import datetime
+import traceback
 
 # Setup logging
 logger = logging.getLogger(__name__)
@@ -80,24 +82,41 @@ async def drive_callback(
         # Get user ID from session
         user_id = request.session.get('drive_auth_user_id')
         if not user_id:
-            raise HTTPException(status_code=400, detail="Missing user ID in session")
+            logger.error("Missing user ID in session during Drive callback")
+            return RedirectResponse(url="/?error=missing_user_id")
         
         # Verify state parameter
         stored_state = request.session.get('drive_auth_state')
         if not stored_state or stored_state != state:
-            raise HTTPException(status_code=400, detail="Invalid state parameter")
+            logger.error(f"Invalid state parameter: got {state}, expected {stored_state}")
+            return RedirectResponse(url="/?error=invalid_state")
         
         # Get credentials from code
-        credentials = await GoogleDriveService.get_credentials_from_code(request, code)
+        try:
+            credentials = await GoogleDriveService.get_credentials_from_code(request, code)
+        except Exception as auth_error:
+            logger.error(f"Error getting credentials from code: {str(auth_error)}")
+            return RedirectResponse(url=f"/?error=auth_error&message={str(auth_error)}")
         
         # Store credentials
-        GoogleDriveService.store_credentials(user_id, credentials)
+        try:
+            GoogleDriveService.store_credentials(user_id, credentials)
+        except Exception as store_error:
+            logger.error(f"Error storing credentials: {str(store_error)}")
+            return RedirectResponse(url=f"/?error=storage_error&message={str(store_error)}")
         
-        # Redirect to main page
-        return RedirectResponse(url="/")
+        # Clear session data
+        if 'drive_auth_user_id' in request.session:
+            del request.session['drive_auth_user_id']
+        if 'drive_auth_state' in request.session:
+            del request.session['drive_auth_state']
+        
+        # Redirect to main page with success message
+        return RedirectResponse(url="/?drive_auth=success")
     except Exception as e:
         logger.error(f"Error in drive callback endpoint: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error(traceback.format_exc())
+        return RedirectResponse(url=f"/?error=callback_error&message={str(e)}")
 
 
 @router.post("/export")
@@ -131,6 +150,7 @@ async def export_to_drive(
             if not header_config:
                 raise HTTPException(status_code=404, detail=f"Header configuration with ID {config_id} not found")
         
+        # Get raw extractions
         raw_extractions = await get_raw_extractions(get_user_id(current_user), db)
         if not raw_extractions:
             raise HTTPException(status_code=404, detail="No data available to export")
@@ -138,16 +158,59 @@ async def export_to_drive(
         # Prepare data for export
         data = []
         for extraction in raw_extractions:
-            if 'raw_data' in extraction and 'bank_details' in extraction['raw_data']:
-                data.extend(extraction['raw_data']['bank_details'])
+            # Get source PDF and extraction date
+            source_pdf = extraction.get('source_pdf', 'Unknown')
+            extraction_date_str = extraction.get('extraction_date', '')
+            
+            # Handle extraction_date which could be a string or a datetime object
+            if isinstance(extraction_date_str, str):
+                extraction_date = extraction_date_str
+            elif hasattr(extraction_date_str, 'strftime'):
+                extraction_date = extraction_date_str.strftime('%Y-%m-%d %H:%M:%S')
+            else:
+                extraction_date = str(datetime.now())
+            
+            # Check if raw_data exists and has bank_details
+            raw_data = extraction.get('raw_data', {})
+            
+            if 'bank_details' in raw_data and isinstance(raw_data['bank_details'], list):
+                # Add source_pdf and extraction_date to each bank detail
+                for bank_detail in raw_data['bank_details']:
+                    bank_detail['source_pdf'] = source_pdf
+                    bank_detail['extraction_date'] = extraction_date
+                    data.append(bank_detail)
+            else:
+                # If no bank_details field, add the entire raw data as a record
+                record = {'source_pdf': source_pdf, 'extraction_date': extraction_date}
+                record.update(raw_data)
+                data.append(record)
+        
+        # Apply header mappings if available
+        if header_config and 'mappings' in header_config:
+            header_mappings = header_config['mappings']
+            if "source_pdf" not in header_mappings:
+                header_mappings["source_pdf"] = "source_pdf"
+            if "extraction_date" not in header_mappings:
+                header_mappings["extraction_date"] = "extraction_date"
+                
+            mapped_records = []
+            for record in data:
+                mapping_record = {}
+                for key, value in record.items():
+                    if key in header_mappings:
+                        mapping_record[header_mappings[key]] = value
+                mapped_records.append(mapping_record)
+            
+            data = mapped_records
         
         # Export to Google Drive
+        custom_headers = request_data.custom_headers
         result = GoogleDriveService.export_to_drive(
             user_id=get_user_id(current_user),
             data=data,
             file_name=request_data.file_name,
             format=request_data.format,
-            custom_headers=request_data.custom_headers
+            custom_headers=custom_headers
         )
         
         return result
@@ -155,4 +218,5 @@ async def export_to_drive(
         raise
     except Exception as e:
         logger.error(f"Error exporting to Google Drive: {str(e)}")
+        logger.error(f"Stack trace: {traceback.format_exc()}")
         raise HTTPException(status_code=500, detail=f"Failed to export to Google Drive: {str(e)}")

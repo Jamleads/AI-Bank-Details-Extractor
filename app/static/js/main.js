@@ -110,6 +110,58 @@ function initializeApp() {
 
     // Check session status to load any existing data
     checkSessionStatus();
+
+    // Check Drive auth status
+    checkDriveAuthStatus();
+}
+
+// Add this function to the file
+function checkDriveAuthStatus() {
+    const urlParams = new URLSearchParams(window.location.search);
+
+    // Check for Drive auth success
+    if (urlParams.has('drive_auth') && urlParams.get('drive_auth') === 'success') {
+        showStatusMessage(`
+            <div class="success-message">
+                <p>Successfully connected to Google Drive!</p>
+                <p>You can now export your data to Google Drive.</p>
+            </div>
+        `, 'success');
+    }
+
+    // Check for Drive auth errors
+    if (urlParams.has('error')) {
+        const error = urlParams.get('error');
+        const message = urlParams.get('message') || 'Unknown error';
+
+        let errorMessage = 'Error connecting to Google Drive: ';
+
+        switch (error) {
+            case 'missing_user_id':
+                errorMessage += 'User session expired. Please try again.';
+                break;
+            case 'invalid_state':
+                errorMessage += 'Authentication state mismatch. Please try again.';
+                break;
+            case 'auth_error':
+                errorMessage += `Authentication failed: ${message}`;
+                break;
+            case 'storage_error':
+                errorMessage += `Failed to store credentials: ${message}`;
+                break;
+            default:
+                errorMessage += message;
+        }
+
+        showStatusMessage(errorMessage, 'error');
+    }
+
+    // Clean up URL parameters
+    if (urlParams.has('drive_auth') || urlParams.has('error')) {
+        // Remove query parameters without refreshing the page
+        const newUrl = window.location.pathname;
+        window.history.replaceState({}, document.title, newUrl);
+    }
 }
 
 // Load header configurations
@@ -440,16 +492,10 @@ async function clearAllData() {
 
 function setupExportOptions() {
     const exportFormat = document.getElementById('export-format');
-    const dataTypeContainer = document.getElementById('data-type-container');
-    const dataType = document.getElementById('data-type');
-    const customHeader = document.getElementById('custom-header');
-    const headerInputContainer = document.getElementById('header-input-container');
-    const headerInput = document.getElementById('header-input');
     const downloadBtn = document.getElementById('download-btn');
     const driveBtn = document.getElementById('drive-btn');
 
-    if (!exportFormat || !dataTypeContainer || !dataType || !customHeader ||
-        !headerInputContainer || !headerInput || !downloadBtn || !driveBtn) {
+    if (!exportFormat || !downloadBtn || !driveBtn) {
         console.error("Required export option elements not found");
         return;
     }
@@ -457,16 +503,6 @@ function setupExportOptions() {
     // Handle export format change
     exportFormat.addEventListener('change', function () {
         updateExportOptions();
-    });
-
-    // Handle data type change
-    dataType.addEventListener('change', function () {
-        updateHeaderVisibility();
-    });
-
-    // Handle custom header toggle
-    customHeader.addEventListener('change', function () {
-        headerInputContainer.style.display = this.checked ? 'block' : 'none';
     });
 
     // Handle download button click
@@ -481,27 +517,7 @@ function setupExportOptions() {
 
     function updateExportOptions() {
         const format = exportFormat.value;
-
-        // Show/hide data type selector for JSON format
-        if (format === 'json') {
-            dataTypeContainer.style.display = 'block';
-        } else {
-            dataTypeContainer.style.display = 'none';
-        }
-
-        updateHeaderVisibility();
-    }
-
-    function updateHeaderVisibility() {
-        const format = exportFormat.value;
-        const isRawData = dataType.value === 'raw';
-
-        // Hide header config for JSON raw data
-        if (format === 'json' && isRawData) {
-            document.getElementById('header-config').style.display = 'none';
-        } else {
-            document.getElementById('header-config').style.display = 'block';
-        }
+        // Any format-specific options can be handled here
     }
 }
 
@@ -745,9 +761,6 @@ async function checkSessionStatus() {
 
 function downloadExport() {
     const format = document.getElementById('export-format').value;
-    const isRawData = document.getElementById('data-type').value === 'raw';
-    const useCustomHeader = document.getElementById('custom-header').checked;
-    const customHeaders = useCustomHeader ? document.getElementById('header-input').value : '';
 
     // Get selected header configuration
     const headerConfigId = document.getElementById('header-config-dropdown').value;
@@ -761,8 +774,6 @@ function downloadExport() {
 
         if (headerConfigId) {
             url += `&config_id=${headerConfigId}`;
-        } else if (useCustomHeader && customHeaders) {
-            url += `&custom_headers=${encodeURIComponent(customHeaders)}`;
         }
     }
 
@@ -782,9 +793,6 @@ async function exportToDrive() {
 
     try {
         const format = document.getElementById('export-format').value;
-        const isRawData = document.getElementById('data-type').value === 'raw';
-        const useCustomHeader = document.getElementById('custom-header').checked;
-        const customHeaders = useCustomHeader ? document.getElementById('header-input').value : '';
 
         // Get selected header configuration
         const headerConfigId = document.getElementById('header-config-dropdown').value;
@@ -804,8 +812,7 @@ async function exportToDrive() {
             body: JSON.stringify({
                 file_name: fileName,
                 format: format,
-                config_id: headerConfigId || undefined,
-                custom_headers: useCustomHeader && !headerConfigId ? customHeaders : null
+                config_id: headerConfigId || undefined
             })
         });
 
@@ -826,12 +833,43 @@ async function exportToDrive() {
 
         showStatusMessage(`
             <div class="success-message">
-                <p>Successfully exported to Google Drive!</p>
-                <p><a href="${result.link}" target="_blank" class="drive-link">
-                    <i class="fab fa-google-drive"></i> View File in Google Drive
-                </a></p>
+                <p><i class="fas fa-check-circle"></i> Successfully exported to Google Drive!</p>
+                <div class="drive-link-container">
+                    <p>File: <strong>${fileName}</strong></p>
+                    <a href="${result.link}" target="_blank" class="drive-link-button">
+                        <i class="fab fa-google-drive"></i> View File in Google Drive
+                    </a>
+                </div>
             </div>
         `, 'success');
+
+        // Add some CSS for the drive link button
+        const style = document.createElement('style');
+        style.textContent = `
+            .drive-link-container {
+                margin-top: 10px;
+                padding: 10px;
+                background-color: #f8f9fa;
+                border-radius: 5px;
+                border-left: 4px solid #4285F4;
+            }
+            .drive-link-button {
+                display: inline-block;
+                margin-top: 5px;
+                padding: 8px 16px;
+                background-color: #4285F4;
+                color: white !important;
+                border-radius: 4px;
+                text-decoration: none;
+                font-weight: bold;
+                transition: background-color 0.3s;
+            }
+            .drive-link-button:hover {
+                background-color: #3367D6;
+                text-decoration: none;
+            }
+        `;
+        document.head.appendChild(style);
     } catch (error) {
         console.error('Error exporting to Google Drive:', error);
         showStatusMessage(`Error exporting to Google Drive: ${error.message}`, 'error');

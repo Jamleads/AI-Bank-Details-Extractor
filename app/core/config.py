@@ -7,7 +7,7 @@ from pydantic_settings import BaseSettings
 
 # Base project directory
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
-
+ 
 
 class Settings(BaseSettings):
     """Application settings"""
@@ -15,7 +15,7 @@ class Settings(BaseSettings):
     BASE_DIR: Path = BASE_DIR
     
     # API Settings
-    API_KEY: str = "AIzaSyCrSaObz-M8amEYze6zcooE2ytYoHxr97o"  # Gemini API key
+    API_KEY: str = "AIzaSyCrjP4HBMC0RataUj4sThVhVjJZe1xTfXo"  # Gemini API key
     
     # App Settings
     DEBUG: bool = True
@@ -62,4 +62,4 @@ class Settings(BaseSettings):
 
 
 # Create settings instance
-settings = Settings() 
+settings = Settings()

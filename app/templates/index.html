@@ -16,6 +16,37 @@
         font-weight: 600;
         margin-bottom: 5px;
     }
+
+    .status-message {
+        margin: 15px 0;
+        padding: 12px 15px;
+        border-radius: 5px;
+        display: none;
+    }
+
+    .status-message.info {
+        background-color: #e3f2fd;
+        border-left: 4px solid #2196F3;
+        color: #0d47a1;
+    }
+
+    .status-message.success {
+        background-color: #e8f5e9;
+        border-left: 4px solid #4CAF50;
+        color: #1b5e20;
+    }
+
+    .status-message.error {
+        background-color: #ffebee;
+        border-left: 4px solid #F44336;
+        color: #b71c1c;
+    }
+
+    .status-message.warning {
+        background-color: #fff8e1;
+        border-left: 4px solid #FFC107;
+        color: #ff6f00;
+    }
 </style>
 {% endblock %}
 
@@ -31,6 +62,9 @@
             Your subscription: <span class="subscription-tier">{{ current_user.subscription_tier }}</span>
         </p>
     </div>
+
+    <!-- Add status message container -->
+    <div id="status-message" class="status-message"></div>
 
     <div class="upload-section">
         <div class="section-header">
@@ -115,17 +149,6 @@
                         <option value="">Default</option>
                         <!-- Header configs will be populated dynamically -->
                     </select>
-                </div>
-                <div class="form-group">
-                    <div class="custom-control custom-checkbox">
-                        <input type="checkbox" id="custom-header" class="custom-control-input">
-                        <label for="custom-header" class="custom-control-label">Use Custom Headers</label>
-                    </div>
-                </div>
-                <div class="form-group" id="custom-header-group" style="display: none;">
-                    <label for="header-input">Custom Headers (comma-separated):</label>
-                    <input type="text" id="header-input" class="form-control"
-                        placeholder="e.g., Bank,Account Name,Number,Sort Code">
                 </div>
             </div>
             <div class="export-buttons">
@@ -452,13 +475,10 @@
         document.getElementById('exportCsvBtn').addEventListener('click', function () {
             const format = document.getElementById('export-format').value;
             const headerConfigId = document.getElementById('header-config-dropdown').value;
-            const useCustomHeader = document.getElementById('custom-header').checked;
-            const customHeaders = useCustomHeader ? document.getElementById('header-input').value : '';
 
             let url = `/api/export/${format}?token=${authToken}`;
             // Default to structured data (not raw)
             if (headerConfigId) url += `&config_id=${headerConfigId}`;
-            if (useCustomHeader && customHeaders) url += `&custom_headers=${encodeURIComponent(customHeaders)}`;
 
             window.location.href = url;
         });
@@ -466,8 +486,6 @@
         document.getElementById('exportDriveBtn').addEventListener('click', function () {
             const format = document.getElementById('export-format').value;
             const headerConfigId = document.getElementById('header-config-dropdown').value;
-            const useCustomHeader = document.getElementById('custom-header').checked;
-            const customHeaders = useCustomHeader ? document.getElementById('header-input').value : '';
 
             // Generate filename with timestamp
             const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
@@ -482,8 +500,7 @@
                 body: JSON.stringify({
                     file_name: fileName,
                     format: format,
-                    config_id: headerConfigId || undefined,
-                    custom_headers: useCustomHeader ? customHeaders : null
+                    config_id: headerConfigId || undefined
                 })
             })
                 .then(response => {
@@ -506,7 +523,57 @@
                     return response.json();
                 })
                 .then(result => {
+                    // Add some CSS for the drive link styling
+                    const style = document.createElement('style');
+                    style.textContent = `
+                        .drive-link-container {
+                            margin-top: 10px;
+                            padding: 10px;
+                            background-color: #f8f9fa;
+                            border-radius: 5px;
+                            border-left: 4px solid #4285F4;
+                        }
+                        .drive-link-button {
+                            display: inline-block;
+                            margin-top: 5px;
+                            padding: 8px 16px;
+                            background-color: #4285F4;
+                            color: white !important;
+                            border-radius: 4px;
+                            text-decoration: none;
+                            font-weight: bold;
+                            transition: background-color 0.3s;
+                        }
+                        .drive-link-button:hover {
+                            background-color: #3367D6;
+                            text-decoration: none;
+                        }
+                    `;
+                    document.head.appendChild(style);
+
+                    // Show success message with styled link
+                    const successMessage = `
+                        <div class="success-message">
+                            <p><i class="fas fa-check-circle"></i> Successfully exported to Google Drive!</p>
+                            <div class="drive-link-container">
+                                <p>File: <strong>${fileName}</strong></p>
+                                <a href="${result.link}" target="_blank" class="drive-link-button">
+                                    <i class="fab fa-google-drive"></i> View File in Google Drive
+                                </a>
+                            </div>
+                        </div>
+                    `;
+
                     alert('Successfully exported to Google Drive!');
+
+                    // Display the success message in a more visible way
+                    const statusMessage = document.getElementById('status-message');
+                    if (statusMessage) {
+                        statusMessage.innerHTML = successMessage;
+                        statusMessage.className = 'status-message success';
+                        statusMessage.style.display = 'block';
+                    }
+
                     // Open the file in a new tab
                     if (result.link) {
                         window.open(result.link, '_blank');
@@ -518,16 +585,6 @@
                         alert(`Error exporting to Google Drive: ${error.message}`);
                     }
                 });
-        });
-
-        // Toggle custom header input
-        document.getElementById('custom-header').addEventListener('change', function () {
-            const customHeaderGroup = document.getElementById('custom-header-group');
-            customHeaderGroup.style.display = this.checked ? 'block' : 'none';
-
-            // Disable header config dropdown when using custom headers
-            const headerConfigDropdown = document.getElementById('header-config-dropdown');
-            headerConfigDropdown.disabled = this.checked;
         });
 
         // Helper functions
