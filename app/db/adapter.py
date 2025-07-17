@@ -224,6 +224,16 @@ class DatabaseAdapter:
             
             config = db.query(HeaderConfig).filter(HeaderConfig.id == config_id).first()
             if config:
+                # Check if this is setting a new default
+                if config_data.get('is_default'):
+                    # Unset default on other configs for this user
+                    db.query(HeaderConfig).filter(
+                        HeaderConfig.user_id == config.user_id,
+                        HeaderConfig.id != config_id,
+                        HeaderConfig.is_default == True
+                    ).update({"is_default": False})
+                
+                # Update the config
                 for key, value in config_data.items():
                     if hasattr(config, key):
                         setattr(config, key, value)
@@ -241,6 +251,15 @@ class DatabaseAdapter:
             from app.db.models import HeaderConfig
             db = next(self._db_provider())
             
+            # First check if it exists and isn't a default config
+            config = db.query(HeaderConfig).filter(HeaderConfig.id == config_id).first()
+            if not config:
+                return 0
+            
+            # Don't allow deleting the default config
+            if config.is_default:
+                return 0
+                
             result = db.query(HeaderConfig).filter(HeaderConfig.id == config_id).delete()
             db.commit()
             return result

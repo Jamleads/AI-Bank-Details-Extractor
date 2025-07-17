@@ -124,23 +124,51 @@ async function loadHeaderConfigurations() {
 
         if (response.ok) {
             const configs = await response.json();
-            const dropdown = document.getElementById('header-config-dropdown');
 
-            // Clear existing options except the default
-            while (dropdown.options.length > 1) {
-                dropdown.remove(1);
+            // Get both dropdowns
+            const exportDropdown = document.getElementById('header-config-dropdown');
+            const uploadDropdown = document.getElementById('upload-header-config');
+
+            // Clear existing options in export dropdown
+            if (exportDropdown) {
+                while (exportDropdown.options.length > 1) {
+                    exportDropdown.remove(1);
+                }
             }
 
-            // Add configurations to dropdown
-            configs.forEach(config => {
-                const option = document.createElement('option');
-                option.value = config.id;
-                option.textContent = config.name + (config.is_default ? ' (Default)' : '');
-                dropdown.appendChild(option);
+            // Clear existing options in upload dropdown
+            if (uploadDropdown) {
+                while (uploadDropdown.options.length > 1) {
+                    uploadDropdown.remove(1);
+                }
+            }
 
-                // Select default configuration
-                if (config.is_default) {
-                    dropdown.value = config.id;
+            // Add configurations to both dropdowns
+            configs.forEach(config => {
+                // For export dropdown
+                if (exportDropdown) {
+                    const exportOption = document.createElement('option');
+                    exportOption.value = config.id;
+                    exportOption.textContent = config.name + (config.is_default ? ' (Default)' : '');
+                    exportDropdown.appendChild(exportOption);
+
+                    // Select default configuration
+                    if (config.is_default) {
+                        exportDropdown.value = config.id;
+                    }
+                }
+
+                // For upload dropdown
+                if (uploadDropdown) {
+                    const uploadOption = document.createElement('option');
+                    uploadOption.value = config.id;
+                    uploadOption.textContent = config.name + (config.is_default ? ' (Default)' : '');
+                    uploadDropdown.appendChild(uploadOption);
+
+                    // Select default configuration
+                    if (config.is_default) {
+                        uploadDropdown.value = config.id;
+                    }
                 }
             });
         } else {
@@ -498,7 +526,7 @@ async function uploadFiles(files) {
         });
 
         // Add header configuration if selected
-        const headerConfigId = document.getElementById('header-config-dropdown').value;
+        const headerConfigId = document.getElementById('upload-header-config').value;
         if (headerConfigId) {
             formData.append('header_config_id', headerConfigId);
         }

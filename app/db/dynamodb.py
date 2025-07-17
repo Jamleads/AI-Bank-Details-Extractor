@@ -631,6 +631,26 @@ class DynamoDBService:
         )
         
         return response.get('Attributes', {})
+        
+    def delete_header_config(self, config_id: str) -> int:
+        """Delete header configuration
+        
+        Args:
+            config_id: Configuration ID
+            
+        Returns:
+            1 if deleted, 0 if not found
+        """
+        # First check if the config exists
+        config = self.get_header_config(config_id)
+        if not config:
+            return 0
+            
+        # Delete the config
+        result = self._execute_delete_item(HEADER_CONFIGS_TABLE, {'id': config_id})
+        
+        # Return 1 if deleted successfully, 0 otherwise
+        return 1 if result else 0
 
     # Raw extraction operations
     def create_raw_extraction(self, extraction_data: Dict[str, Any]) -> Dict[str, Any]:

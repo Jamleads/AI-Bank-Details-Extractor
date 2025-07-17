@@ -146,10 +146,7 @@ async def clear_user_session(user_id: Union[int, str], db = None):
         # Delete raw extractions
         raw_extractions_deleted = db_adapter.delete_raw_extractions_by_user(user_id)
         
-        # Delete bank records
-        bank_records_deleted = db_adapter.delete_bank_records_by_user(user_id)
-        
-        total_deleted = raw_extractions_deleted + bank_records_deleted
+        total_deleted = raw_extractions_deleted
         
         return {"success": True, "records_deleted": total_deleted}
     except Exception as e:

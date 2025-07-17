@@ -3,6 +3,20 @@
 {% block title %}Bank Details Extractor{% endblock %}
 
 {% block extra_css %}
+<style>
+    .header-config-section {
+        margin-top: 15px;
+        margin-bottom: 15px;
+        padding: 10px;
+        background-color: #f8f9fa;
+        border-radius: 5px;
+    }
+
+    .header-config-section label {
+        font-weight: 600;
+        margin-bottom: 5px;
+    }
+</style>
 {% endblock %}
 
 {% block content %}
@@ -34,6 +48,15 @@
                     class="file-input">
             </div>
             <div id="fileList" class="file-list"></div>
+            <div class="header-config-section">
+                <div class="form-group">
+                    <label for="upload-header-config">Header Configuration:</label>
+                    <select id="upload-header-config" class="form-control">
+                        <option value="">Default</option>
+                        <!-- Header configs will be populated dynamically -->
+                    </select>
+                </div>
+            </div>
             <div class="upload-controls">
                 <button type="button" id="processBtn" class="btn btn-primary" disabled>Process Files</button>
                 <button type="button" id="clear-button" class="btn btn-secondary" disabled>Clear All Data</button>
@@ -333,6 +356,12 @@
         //         formData.append('files', file);
         //     });
 
+        //     // Add header configuration if selected
+        //     const headerConfigId = document.getElementById('upload-header-config').value;
+        //     if (headerConfigId) {
+        //         formData.append('header_config_id', headerConfigId);
+        //     }
+
         //     // Process files directly with extract endpoint
         //     fetch('/api/extract', {
         //         method: 'POST',
@@ -564,21 +593,39 @@
                     return response.json();
                 })
                 .then(configs => {
-                    const dropdown = document.getElementById('header-config-dropdown');
+                    // Update export dropdown
+                    const exportDropdown = document.getElementById('header-config-dropdown');
                     // Clear existing options except the default
-                    while (dropdown.options.length > 1) {
-                        dropdown.remove(1);
+                    while (exportDropdown.options.length > 1) {
+                        exportDropdown.remove(1);
                     }
 
-                    // Add options for each config
+                    // Update upload dropdown
+                    const uploadDropdown = document.getElementById('upload-header-config');
+                    // Clear existing options except the default
+                    while (uploadDropdown.options.length > 1) {
+                        uploadDropdown.remove(1);
+                    }
+
+                    // Add options for each config to both dropdowns
                     configs.forEach(config => {
-                        const option = document.createElement('option');
-                        option.value = config.id;
-                        option.textContent = config.name;
+                        // For export dropdown
+                        const exportOption = document.createElement('option');
+                        exportOption.value = config.id;
+                        exportOption.textContent = config.name;
                         if (config.is_default) {
-                            option.textContent += ' (Default)';
+                            exportOption.textContent += ' (Default)';
                         }
-                        dropdown.appendChild(option);
+                        exportDropdown.appendChild(exportOption);
+
+                        // For upload dropdown
+                        const uploadOption = document.createElement('option');
+                        uploadOption.value = config.id;
+                        uploadOption.textContent = config.name;
+                        if (config.is_default) {
+                            uploadOption.textContent += ' (Default)';
+                        }
+                        uploadDropdown.appendChild(uploadOption);
                     });
                 })
                 .catch(error => {

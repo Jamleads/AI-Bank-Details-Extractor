@@ -150,6 +150,24 @@ async def update_config(
     try:
         # Convert to dict for compatibility with both SQLite and DynamoDB
         update_data = config_update.dict(exclude_unset=True)
+        
+        # Get the user ID
+        user_id = get_user_id(current_user)
+        
+        # Check if this is setting a new default
+        if update_data.get('is_default'):
+            # Get all user configs
+            configs = await get_header_configs(user_id, db)
+            # Unset default on other configs if this one is being set as default
+            for config in configs:
+                # Handle both object and dictionary access
+                config_id_value = config.get('id', getattr(config, 'id', None)) if isinstance(config, dict) else config.id
+                is_default = config.get('is_default', getattr(config, 'is_default', False)) if isinstance(config, dict) else config.is_default
+                
+                if config_id_value != config_id and is_default:
+                    await update_header_config(config_id_value, {"is_default": False}, db)
+        
+        # Update the config
         config = await update_header_config(config_id, update_data, db)
         if not config:
             raise HTTPException(status_code=404, detail="Header configuration not found")
@@ -179,9 +197,24 @@ async def delete_config(
         Success message
     """
     try:
+        # Get user ID
+        user_id = get_user_id(current_user)
+        
+        # Check if config exists and belongs to user
+        config = await get_header_config(config_id, user_id, db)
+        if not config:
+            raise HTTPException(status_code=404, detail="Header configuration not found")
+        
+        # Check if it's the default config - handle both object and dictionary
+        is_default = config.get('is_default', False) if isinstance(config, dict) else getattr(config, 'is_default', False)
+        if is_default:
+            raise HTTPException(status_code=400, detail="Cannot delete the default configuration")
+        
+        # Delete the config
         success = await delete_header_config(config_id, db)
         if not success:
             raise HTTPException(status_code=404, detail="Header configuration not found")
+        
         return {"success": True, "message": "Header configuration deleted successfully"}
     except HTTPException:
         raise
