@@ -66,7 +66,6 @@ class ProcessResponse(BaseModel):
     results: List[Dict[str, Any]] = Field(default_factory=list)
     errors: List[Dict[str, str]] = Field(default_factory=list)
 
-
 class SessionStatus(BaseModel):
     """Response model for session status"""
     files: List[FileInfo] = Field(default_factory=list)

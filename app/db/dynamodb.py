@@ -26,10 +26,6 @@ class DynamoDBService:
         """Initialize DynamoDB service"""
         # Initialize DynamoDB client
         kwargs = {}
-
-        print("\n\n\n\n\n\n dynamodb endpoint")
-        print(settings.DYNAMODB_ENDPOINT_URL)
-        print("\n\n\n\n\n\n")
         if settings.DYNAMODB_ENDPOINT_URL:
             kwargs["endpoint_url"] = settings.DYNAMODB_ENDPOINT_URL
 
