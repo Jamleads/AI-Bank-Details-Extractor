@@ -89,7 +89,7 @@ function updatePricingUI(pricingData) {
                 </ul>
             </div>
             <div class="pricing-action">
-                <button class="payment-button" data-tier="${tier}">${buttonText}</button>
+                <button class="payment-button" data-tier="${tier.toUpperCase()}">${buttonText}</button>
             </div>
         `;
 
@@ -114,7 +114,7 @@ async function initiatePayment(tier) {
                 'Content-Type': 'application/json'
             },
             body: JSON.stringify({
-                tier: tier,
+                tier: tier.toUpperCase(),  // Convert to uppercase to match backend enum
                 country_code: "USA"  // Default to USA
             })
         });

@@ -1,4 +1,4 @@
-.PHONY: help setup-env start-db stop-db check-db init-db start-app start-all clean test-dynamodb migrate-credentials test-credentials
+.PHONY: help setup-env start-db stop-db check-db init-db start-app start-all clean test-dynamodb migrate-credentials test-credentials run-aws create-secrets check-aws
 
 # Default target
 help:
@@ -13,7 +13,13 @@ help:
 	@echo "  make test-dynamodb    - Run tests for DynamoDB functions"
 	@echo "  make test-credentials - Test credentials storage in DynamoDB"
 	@echo "  make migrate-credentials - Migrate credentials from files to database"
+	@echo "  make run-aws          - Run app with AWS services"
+	@echo "  make create-secrets   - Create secrets in AWS Secrets Manager"
+	@echo "  make check-aws        - Check AWS connectivity and permissions"
 	@echo "  make clean            - Remove virtual environment and Docker volumes"
+
+# AWS Region settings (used across different commands)
+AWS_REGION = sa-east-1
 
 # Setup environment
 setup-env:
@@ -50,9 +56,9 @@ test-dynamodb: start-db
 	@echo "Testing DynamoDB functions..."
 	sleep 2  # Wait for DynamoDB to be fully ready
 	@echo "Setting up test environment..."
-	DYNAMODB_TABLE_PREFIX=test_ . venv/bin/activate && python scripts/init_dynamodb.py
+	. venv/bin/activate && python scripts/init_dynamodb.py
 	@echo "Running DynamoDB tests..."
-	DYNAMODB_TABLE_PREFIX=test_ . venv/bin/activate && python scripts/test_dynamodb.py
+	. venv/bin/activate && python scripts/test_dynamodb.py
 
 # Start the application
 start-app:
@@ -77,15 +83,52 @@ clean:
 migrate-credentials: start-db
 	@echo "Migrating credentials from files to database..."
 	sleep 2  # Wait for DynamoDB to be fully ready
-	DYNAMODB_TABLE_PREFIX= . venv/bin/activate && python scripts/init_dynamodb.py
+	. venv/bin/activate && python scripts/init_dynamodb.py
 	@echo "Running credential migration..."
-	DYNAMODB_TABLE_PREFIX= . venv/bin/activate && python scripts/migrate_credentials.py 
+	. venv/bin/activate && python scripts/migrate_credentials.py 
 
 # Test credentials storage
 test-credentials: start-db
 	@echo "Testing credentials storage in DynamoDB..."
 	sleep 2  # Wait for DynamoDB to be fully ready
 	@echo "Setting up test environment..."
-	DYNAMODB_TABLE_PREFIX=test_ . venv/bin/activate && python scripts/init_dynamodb.py
+	. venv/bin/activate && python scripts/init_dynamodb.py
 	@echo "Running credentials tests..."
-	DYNAMODB_TABLE_PREFIX=test_ . venv/bin/activate && python scripts/test_credentials_storage.py 
+	. venv/bin/activate && python scripts/test_credentials_storage.py 
+
+# Check AWS connectivity and permissions
+check-aws:
+	@echo "Checking AWS connectivity and permissions..."
+	. venv/bin/activate && AWS_REGION=$(AWS_REGION) python scripts/check_aws.py
+
+# Run application with AWS services
+run-aws:
+	@echo "Running application with AWS services..."
+	@echo "Using AWS Secrets Manager for sensitive settings"
+	. venv/bin/activate && \
+	AWS_REGION=$(AWS_REGION) \
+	DATABASE_TYPE=dynamodb \
+	USE_AWS_SECRETS=true \
+	AWS_SECRETS_NAME=ai-bank \
+	S3_BUCKET=pending-extractions \
+	DEBUG=true \
+	USERS_TABLE_NAME=users \
+	HEADER_CONFIGS_TABLE_NAME=header-configs \
+	RAW_EXTRACTIONS_TABLE_NAME=raw-extractions \
+	PAYMENTS_TABLE_NAME=payments \
+	USER_CREDENTIALS_TABLE_NAME=user-credentials \
+	EMAIL_INDEX_NAME=email-index \
+	GOOGLE_ID_INDEX_NAME=google-id-index \
+	USER_ID_INDEX_NAME=user-id-index \
+	YATIVO_DEPOSIT_ID_INDEX_NAME=yativo-deposit-id-index \
+	python main.py
+
+# Create necessary secrets in AWS Secrets Manager
+create-secrets:
+	@echo "Creating secrets in AWS Secrets Manager..."
+	aws secretsmanager create-secret \
+		--name ai-bank \
+		--description "Secrets for AI Bank Details Extractor" \
+		--secret-string '{"API_KEY":"AIzaSyCrjP4HBMC0RataUj4sThVhVjJZe1xTfXo", "SECRET_KEY":"your-super-secret-key-change-this-in-production", "GOOGLE_CLIENT_ID":"783810249351-qcc3uu1mblul8aoco9h0rvoh91cvqjsk.apps.googleusercontent.com", "GOOGLE_CLIENT_SECRET":"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", "YATIVO_SECRET_KEY":"0423145c-4059-4529-b97f-1fb14b2d8e9c"}' \
+		--region $(AWS_REGION) || echo "Secret already exists"
+	@echo "Secrets created/updated" 

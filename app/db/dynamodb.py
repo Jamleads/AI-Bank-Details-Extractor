@@ -12,12 +12,11 @@ from boto3.dynamodb.conditions import Key, Attr
 from app.core.config import settings
 
 # Table names
-USERS_TABLE = f"{settings.DYNAMODB_TABLE_PREFIX}users"
-BANK_RECORDS_TABLE = f"{settings.DYNAMODB_TABLE_PREFIX}bank_records"
-HEADER_CONFIGS_TABLE = f"{settings.DYNAMODB_TABLE_PREFIX}header_configs"
-RAW_EXTRACTIONS_TABLE = f"{settings.DYNAMODB_TABLE_PREFIX}raw_extractions"
-PAYMENTS_TABLE = f"{settings.DYNAMODB_TABLE_PREFIX}payments"
-USER_CREDENTIALS_TABLE = f"{settings.DYNAMODB_TABLE_PREFIX}user_credentials"
+USERS_TABLE = settings.USERS_TABLE_NAME
+HEADER_CONFIGS_TABLE = settings.HEADER_CONFIGS_TABLE_NAME
+RAW_EXTRACTIONS_TABLE = settings.RAW_EXTRACTIONS_TABLE_NAME
+PAYMENTS_TABLE = settings.PAYMENTS_TABLE_NAME
+USER_CREDENTIALS_TABLE = settings.USER_CREDENTIALS_TABLE_NAME
 
 
 class DynamoDBService:
@@ -27,6 +26,10 @@ class DynamoDBService:
         """Initialize DynamoDB service"""
         # Initialize DynamoDB client
         kwargs = {}
+
+        print("\n\n\n\n\n\n dynamodb endpoint")
+        print(settings.DYNAMODB_ENDPOINT_URL)
+        print("\n\n\n\n\n\n")
         if settings.DYNAMODB_ENDPOINT_URL:
             kwargs["endpoint_url"] = settings.DYNAMODB_ENDPOINT_URL
 
@@ -48,8 +51,21 @@ class DynamoDBService:
         Returns:
             The item that was put
         """
+        # Process the item to ensure all values are valid for DynamoDB
+        processed_item = {}
+        for key, value in item.items():
+            # Skip null values
+            if value is None:
+                continue
+                
+            # Convert float to Decimal
+            if isinstance(value, float):
+                processed_item[key] = Decimal(str(value))
+            else:
+                processed_item[key] = value
+        
         table = self.dynamodb.Table(table_name)
-        table.put_item(Item=item)
+        table.put_item(Item=processed_item)
         return item
     
     def _execute_get_item(self, table_name: str, key: Dict[str, Any]) -> Optional[Dict[str, Any]]:
@@ -142,12 +158,11 @@ class DynamoDBService:
             
         return deleted_count
 
+    # deprecated
     def create_tables(self):
         """Create DynamoDB tables if they don't exist"""
         # Users table
         self._create_users_table()
-        # Bank records table
-        self._create_bank_records_table()
         # Header configs table
         self._create_header_configs_table()
         # Raw extractions table
@@ -202,40 +217,6 @@ class DynamoDBService:
             print(f"Created {USERS_TABLE} table")
         except self.dynamodb.meta.client.exceptions.ResourceInUseException:
             print(f"{USERS_TABLE} table already exists")
-
-    def _create_bank_records_table(self):
-        """Create bank records table"""
-        try:
-            self.dynamodb.create_table(
-                TableName=BANK_RECORDS_TABLE,
-                KeySchema=[
-                    {'AttributeName': 'id', 'KeyType': 'HASH'},  # Partition key
-                ],
-                AttributeDefinitions=[
-                    {'AttributeName': 'id', 'AttributeType': 'S'},
-                    {'AttributeName': 'user_id', 'AttributeType': 'S'},
-                ],
-                GlobalSecondaryIndexes=[
-                    {
-                        'IndexName': 'user-id-index',
-                        'KeySchema': [
-                            {'AttributeName': 'user_id', 'KeyType': 'HASH'},
-                        ],
-                        'Projection': {'ProjectionType': 'ALL'},
-                        'ProvisionedThroughput': {
-                            'ReadCapacityUnits': 5,
-                            'WriteCapacityUnits': 5
-                        }
-                    },
-                ],
-                ProvisionedThroughput={
-                    'ReadCapacityUnits': 5,
-                    'WriteCapacityUnits': 5
-                }
-            )
-            print(f"Created {BANK_RECORDS_TABLE} table")
-        except self.dynamodb.meta.client.exceptions.ResourceInUseException:
-            print(f"{BANK_RECORDS_TABLE} table already exists")
 
     def _create_header_configs_table(self):
         """Create header configs table"""
@@ -510,35 +491,6 @@ class DynamoDBService:
         key, update_expression, expression_values, expression_names = self._build_update_user_input(user_id, user_data)
         return self._execute_update_item(USERS_TABLE, key, update_expression, expression_values, expression_names)
 
-    # Bank record operations
-    def create_bank_record(self, record_data: Dict[str, Any]) -> Dict[str, Any]:
-        """Create a new bank record"""
-        table = self.dynamodb.Table(BANK_RECORDS_TABLE)
-        record_id = str(uuid.uuid4())
-        timestamp = datetime.now().isoformat()
-        
-        record_item = {
-            'id': record_id,
-            'user_id': record_data['user_id'],
-            'source_pdf': record_data['source_pdf'],
-            'extraction_date': timestamp,
-            'account_number': record_data.get('account_number'),
-            'account_name': record_data.get('account_name'),
-            'bank_name': record_data.get('bank_name'),
-            'sort_code': record_data.get('sort_code'),
-            'iban': record_data.get('iban'),
-            'swift_code': record_data.get('swift_code'),
-            'routing_number': record_data.get('routing_number'),
-            'bsb_code': record_data.get('bsb_code'),
-            'branch_code': record_data.get('branch_code'),
-            'branch_address': record_data.get('branch_address'),
-            'account_type': record_data.get('account_type'),
-            'currency': record_data.get('currency'),
-            'balance': record_data.get('balance'),
-            'other_details': record_data.get('other_details')
-        }
-        
-        return self._execute_put_item(BANK_RECORDS_TABLE, record_item)
 
     def _build_get_records_by_user_query(self, user_id: str) -> Key:
         """Build query for getting bank records by user ID
@@ -550,25 +502,6 @@ class DynamoDBService:
             Key condition for the Query operation
         """
         return Key('user_id').eq(user_id)
-
-    def get_bank_records_by_user(self, user_id: str) -> List[Dict[str, Any]]:
-        """Get all bank records for a user"""
-        key_condition = self._build_get_records_by_user_query(user_id)
-        return self._execute_query(BANK_RECORDS_TABLE, 'user-id-index', key_condition)
-
-    def delete_bank_records_by_user(self, user_id: str) -> int:
-        """Delete all bank records for a user"""
-        # First get all bank records for the user
-        records = self.get_bank_records_by_user(user_id)
-        
-        if not records:
-            return 0
-            
-        # Extract the keys (id) from each record
-        keys = [{'id': record['id']} for record in records]
-        
-        # Execute batch delete
-        return self._execute_batch_delete(BANK_RECORDS_TABLE, keys)
 
     # Header config operations
     def create_header_config(self, config_data: Dict[str, Any]) -> Dict[str, Any]:
@@ -726,17 +659,26 @@ class DynamoDBService:
         payment_item = {
             'id': payment_id,
             'user_id': payment_data['user_id'],
-            'yativo_deposit_id': payment_data.get('yativo_deposit_id'),
-            'yativo_customer_id': payment_data.get('yativo_customer_id'),
             'amount': amount,
             'currency': payment_data['currency'],
             'tier': payment_data['tier'],
-            'payment_method': payment_data.get('payment_method'),
             'status': payment_data.get('status', 'pending'),
             'created_at': timestamp,
-            'updated_at': timestamp,
-            'checkout_url': payment_data.get('checkout_url')
+            'updated_at': timestamp
         }
+        
+        # Add optional fields only if they have values
+        if payment_data.get('yativo_deposit_id'):
+            payment_item['yativo_deposit_id'] = payment_data['yativo_deposit_id']
+        
+        if payment_data.get('yativo_customer_id'):
+            payment_item['yativo_customer_id'] = payment_data['yativo_customer_id']
+            
+        if payment_data.get('payment_method'):
+            payment_item['payment_method'] = payment_data['payment_method']
+            
+        if payment_data.get('checkout_url'):
+            payment_item['checkout_url'] = payment_data['checkout_url']
         
         return self._execute_put_item(PAYMENTS_TABLE, payment_item)
 
@@ -772,14 +714,22 @@ class DynamoDBService:
         # Build update expression
         update_expression = "SET updated_at = :updated_at"
         expression_attribute_values = {":updated_at": datetime.now().isoformat()}
+        expression_attribute_names = {}
         
+        # Process each field, ensuring correct types
         for key, value in payment_data.items():
             if key not in ['id', 'user_id', 'created_at']:
+                # Skip null values
+                if value is None:
+                    continue
+                    
+                # Handle amount specifically to ensure it's a Decimal
+                if key == 'amount' and not isinstance(value, Decimal):
+                    value = Decimal(str(value))
+                
                 update_expression += f", #{key} = :{key}"
                 expression_attribute_values[f":{key}"] = value
-        
-        # Build expression attribute names
-        expression_attribute_names = {f"#{key}": key for key in payment_data if key not in ['id', 'user_id', 'created_at']}
+                expression_attribute_names[f"#{key}"] = key
         
         # Update the item
         response = table.update_item(

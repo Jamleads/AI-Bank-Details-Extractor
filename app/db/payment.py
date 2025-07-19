@@ -5,6 +5,7 @@ from datetime import datetime
 from typing import List, Optional
 from sqlalchemy import Column, Integer, String, Float, DateTime, ForeignKey, Text
 from sqlalchemy.orm import Session, relationship
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.database import Base
 from app.models.payment import PaymentDB, PaymentStatus, PricingTier
@@ -32,28 +33,28 @@ class Payment(Base):
     user = relationship("User", back_populates="payments")
 
 
-def create_payment(db_session: Session, user_id: int, amount: float, currency: str, tier: PricingTier) -> PaymentDB:
+async def create_payment(db_session: AsyncSession, user_id: int, amount: float, currency: str, tier: PricingTier) -> PaymentDB:
     """Create a new payment record"""
     return db.create_payment(user_id, amount, currency, tier.value)
 
 
-def get_payment(db_session: Session, payment_id: int) -> Optional[Payment]:
+async def get_payment(db_session: AsyncSession, payment_id: int) -> Optional[Payment]:
     """Get payment by ID"""
     return db.get_payment(payment_id)
 
 
-def get_payments_by_user(db_session: Session, user_id: int) -> List[Payment]:
+async def get_payments_by_user(db_session: AsyncSession, user_id: int) -> List[Payment]:
     """Get all payments for a user"""
     return db.get_payments_by_user(user_id)
 
 
-def update_payment_status(db_session: Session, payment_id: int, status: PaymentStatus) -> Optional[Payment]:
+async def update_payment_status(db_session: AsyncSession, payment_id: int, status: PaymentStatus) -> Optional[Payment]:
     """Update payment status"""
     return db.update_payment_status(payment_id, status.value)
 
 
-def update_payment_yativo_details(
-    db_session: Session, 
+async def update_payment_yativo_details(
+    db_session: AsyncSession, 
     payment_id: int, 
     yativo_deposit_id: str, 
     yativo_customer_id: Optional[str] = None,
@@ -70,6 +71,6 @@ def update_payment_yativo_details(
     )
 
 
-def get_payment_by_yativo_deposit_id(db_session: Session, yativo_deposit_id: str) -> Optional[Payment]:
+async def get_payment_by_yativo_deposit_id(db_session: AsyncSession, yativo_deposit_id: str) -> Optional[Payment]:
     """Get payment by Yativo deposit ID"""
     return db.get_payment_by_yativo_deposit_id(yativo_deposit_id)

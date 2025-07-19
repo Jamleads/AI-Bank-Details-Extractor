@@ -122,13 +122,6 @@ def run_test(test_name: str, test_func, *args, **kwargs):
         print(f"Error: {str(e)}")
         return None
 
-
-def test_create_tables():
-    """Test creating DynamoDB tables"""
-    dynamodb_service.create_tables()
-    return True
-
-
 def test_create_user():
     """Test creating a user"""
     user = dynamodb_service.create_user(TEST_USER)
@@ -341,10 +334,7 @@ def decimal_default(obj):
 def main():
     """Run all tests"""
     print("Starting DynamoDB tests...")
-    
-    # Create tables
-    run_test("Create Tables", test_create_tables)
-    
+
     # User tests
     global created_user
     created_user = run_test("Create User", test_create_user)

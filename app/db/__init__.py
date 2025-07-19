@@ -30,7 +30,3 @@ async def init_db():
         # Create tables
         async with engine.begin() as conn:
             await conn.run_sync(Base.metadata.create_all)
-    else:
-        # Initialize DynamoDB tables
-        logger.info("Initializing DynamoDB tables")
-        db.create_tables()

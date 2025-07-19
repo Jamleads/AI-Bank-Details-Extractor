@@ -33,12 +33,6 @@ class DatabaseAdapter:
             from app.db.dynamodb import dynamodb_service
             self._db_provider = dynamodb_service
 
-    def create_tables(self):
-        """Create tables if using DynamoDB"""
-        if self.db_type == "dynamodb":
-            from app.db.dynamodb import dynamodb_service
-            dynamodb_service.create_tables()
-
     # User operations
     def get_user_by_email(self, email: str):
         """Get user by email"""
@@ -310,7 +304,7 @@ class DatabaseAdapter:
 
     # Payment operations
     def create_payment(self, user_id: Union[int, str], amount: float, currency: str, tier: str):
-        """Create a new payment"""
+        """Create a new payment record"""
         if self.db_type == "sqlite":
             from app.db.models import Payment
             db = next(self._db_provider())
@@ -327,7 +321,15 @@ class DatabaseAdapter:
             db.refresh(payment)
             return payment
         else:
-            return self._db_provider.create_payment(str(user_id), amount, currency, tier)
+            # Create a payment data dictionary for DynamoDB
+            payment_data = {
+                'user_id': str(user_id),
+                'amount': amount,
+                'currency': currency,
+                'tier': tier,
+                'status': 'pending'
+            }
+            return self._db_provider.create_payment(payment_data)
 
     def get_payment(self, payment_id: Union[int, str]):
         """Get payment by ID"""
@@ -371,7 +373,9 @@ class DatabaseAdapter:
                 return payment
             return None
         else:
-            return self._db_provider.update_payment_status(str(payment_id), status)
+            # Create a payment data dictionary for DynamoDB
+            payment_data = {'status': status}
+            return self._db_provider.update_payment(str(payment_id), payment_data)
 
     def update_payment_yativo_details(
         self, 
@@ -401,13 +405,19 @@ class DatabaseAdapter:
                 return payment
             return None
         else:
-            return self._db_provider.update_payment_yativo_details(
-                str(payment_id), 
-                yativo_deposit_id,
-                yativo_customer_id,
-                checkout_url,
-                payment_method
-            )
+            # Create a payment data dictionary for DynamoDB
+            payment_data = {
+                'yativo_deposit_id': yativo_deposit_id
+            }
+            
+            if yativo_customer_id:
+                payment_data['yativo_customer_id'] = yativo_customer_id
+            if checkout_url:
+                payment_data['checkout_url'] = checkout_url
+            if payment_method:
+                payment_data['payment_method'] = payment_method
+                
+            return self._db_provider.update_payment(str(payment_id), payment_data)
 
     # User credentials operations
     def store_user_credentials(self, user_id: Union[int, str], credential_type: str, credentials: Dict[str, Any]):

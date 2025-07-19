@@ -557,7 +557,7 @@
     // Add mapping row
     function addMappingRow(field = '', header = '') {
         const mappingRows = document.getElementById('mappingRows');
-        const rowId = Date.now();
+        const rowId = Date.now() + '_' + Math.random().toString(36).substr(2, 9); // More unique ID
 
         const row = document.createElement('div');
         row.className = 'mapping-row';

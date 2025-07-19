@@ -1,0 +1,195 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: Modular DynamoDB Tables for Invoice2CSV App
+
+Parameters:
+  Stage:
+    Type: String
+    Description: Deployment stage
+    AllowedValues:
+      - dev
+      - prod
+    Default: dev
+
+  UsersTableName:
+    Type: String
+    Default: users
+
+  HeaderConfigsTableName:
+    Type: String
+    Default: header-configs
+
+  RawExtractionsTableName:
+    Type: String
+    Default: raw-extractions
+
+  PaymentsTableName:
+    Type: String
+    Default: payments
+
+  UserCredentialsTableName:
+    Type: String
+    Default: user-credentials
+
+Resources:
+
+  UsersTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub ${UsersTableName}
+      BillingMode: PAY_PER_REQUEST
+      SSESpecification:
+        SSEEnabled: true
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
+      AttributeDefinitions:
+        - AttributeName: id
+          AttributeType: S
+        - AttributeName: email
+          AttributeType: S
+        - AttributeName: google_id
+          AttributeType: S
+      KeySchema:
+        - AttributeName: id
+          KeyType: HASH
+      GlobalSecondaryIndexes:
+        - IndexName: email-index
+          KeySchema:
+            - AttributeName: email
+              KeyType: HASH
+          Projection:
+            ProjectionType: ALL
+        - IndexName: google-id-index
+          KeySchema:
+            - AttributeName: google_id
+              KeyType: HASH
+          Projection:
+            ProjectionType: ALL
+
+  HeaderConfigsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub ${HeaderConfigsTableName}
+      BillingMode: PAY_PER_REQUEST
+      SSESpecification:
+        SSEEnabled: true
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
+      AttributeDefinitions:
+        - AttributeName: id
+          AttributeType: S
+        - AttributeName: user_id
+          AttributeType: S
+      KeySchema:
+        - AttributeName: id
+          KeyType: HASH
+      GlobalSecondaryIndexes:
+        - IndexName: user-id-index
+          KeySchema:
+            - AttributeName: user_id
+              KeyType: HASH
+          Projection:
+            ProjectionType: ALL
+
+  RawExtractionsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub ${RawExtractionsTableName}
+      BillingMode: PAY_PER_REQUEST
+      SSESpecification:
+        SSEEnabled: true
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
+      AttributeDefinitions:
+        - AttributeName: id
+          AttributeType: S
+        - AttributeName: user_id
+          AttributeType: S
+      KeySchema:
+        - AttributeName: id
+          KeyType: HASH
+      GlobalSecondaryIndexes:
+        - IndexName: user-id-index
+          KeySchema:
+            - AttributeName: user_id
+              KeyType: HASH
+          Projection:
+            ProjectionType: ALL
+
+  PaymentsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub ${PaymentsTableName}
+      BillingMode: PAY_PER_REQUEST
+      SSESpecification:
+        SSEEnabled: true
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
+      AttributeDefinitions:
+        - AttributeName: id
+          AttributeType: S
+        - AttributeName: user_id
+          AttributeType: S
+        - AttributeName: yativo_deposit_id
+          AttributeType: S
+      KeySchema:
+        - AttributeName: id
+          KeyType: HASH
+      GlobalSecondaryIndexes:
+        - IndexName: user-id-index
+          KeySchema:
+            - AttributeName: user_id
+              KeyType: HASH
+          Projection:
+            ProjectionType: ALL
+        - IndexName: yativo-deposit-id-index
+          KeySchema:
+            - AttributeName: yativo_deposit_id
+              KeyType: HASH
+          Projection:
+            ProjectionType: ALL
+
+  UserCredentialsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub ${UserCredentialsTableName}
+      BillingMode: PAY_PER_REQUEST
+      SSESpecification:
+        SSEEnabled: true
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
+      AttributeDefinitions:
+        - AttributeName: user_id
+          AttributeType: S
+        - AttributeName: credential_type
+          AttributeType: S
+      KeySchema:
+        - AttributeName: user_id
+          KeyType: HASH
+        - AttributeName: credential_type
+          KeyType: RANGE
+
+Outputs:
+  UsersTableOutput:
+    Value: !Ref UsersTable
+    Export:
+      Name: !Sub ${UsersTableName}-table
+
+  HeaderConfigsTableOutput:
+    Value: !Ref HeaderConfigsTable
+    Export:
+      Name: !Sub ${HeaderConfigsTableName}-table
+
+  RawExtractionsTableOutput:
+    Value: !Ref RawExtractionsTable
+    Export:
+      Name: !Sub ${RawExtractionsTableName}-table
+
+  PaymentsTableOutput:
+    Value: !Ref PaymentsTable
+    Export:
+      Name: !Sub ${PaymentsTableName}-table
+
+  UserCredentialsTableOutput:
+    Value: !Ref UserCredentialsTable
+    Export:
+      Name: !Sub ${UserCredentialsTableName}-table
