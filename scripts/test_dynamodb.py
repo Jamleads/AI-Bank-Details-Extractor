@@ -180,16 +180,6 @@ def test_create_bank_record(user_id: str):
     assert record["account_number"] == TEST_BANK_RECORD["account_number"]
     return record
 
-
-def test_get_bank_records_by_user(user_id: str):
-    """Test getting bank records by user"""
-    records = dynamodb_service.get_bank_records_by_user(user_id)
-    assert isinstance(records, list)
-    assert len(records) > 0
-    assert records[0]["user_id"] == user_id
-    return records
-
-
 def test_create_header_config(user_id: str):
     """Test creating a header config"""
     config_data = TEST_HEADER_CONFIG.copy()
@@ -315,15 +305,6 @@ def test_delete_raw_extractions_by_user(user_id: str):
     return count
 
 
-def test_delete_bank_records_by_user(user_id: str):
-    """Test deleting bank records by user"""
-    count = dynamodb_service.delete_bank_records_by_user(user_id)
-    assert count >= 0
-    records = dynamodb_service.get_bank_records_by_user(user_id)
-    assert len(records) == 0
-    return count
-
-
 def decimal_default(obj):
     """Helper function to convert Decimal to float for JSON serialization"""
     if isinstance(obj, Decimal):
@@ -347,11 +328,6 @@ def main():
     run_test("Get User by Email", test_get_user_by_email, created_user["email"])
     run_test("Get User by Google ID", test_get_user_by_google_id, created_user["google_id"])
     run_test("Update User", test_update_user, user_id)
-    
-    # Bank record tests
-    global created_bank_record
-    created_bank_record = run_test("Create Bank Record", test_create_bank_record, user_id)
-    run_test("Get Bank Records by User", test_get_bank_records_by_user, user_id)
     
     # Header config tests
     global created_header_config

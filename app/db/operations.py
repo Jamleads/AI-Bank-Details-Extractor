@@ -44,41 +44,6 @@ async def save_bank_details(user_id: Union[int, str], bank_details: List[Any]):
         
     return {"records_added": records_added, "success": True}
 
-async def get_user_records(user_id: Union[int, str], db = None):
-    """
-    Get all bank records for a user
-    
-    Args:
-        user_id: User ID
-        db: Database session (optional, for compatibility)
-        
-    Returns:
-        List of bank records
-    """
-    records = db_adapter.get_bank_records_by_user(user_id)
-    return records
-
-async def get_processed_files(user_id: Union[int, str], db = None):
-    """
-    Get all processed files for a user
-    
-    Args:
-        user_id: User ID
-        db: Database session (optional, for compatibility)
-        
-    Returns:
-        List of processed files
-    """
-    records = db_adapter.get_bank_records_by_user(user_id)
-    # Extract unique source_pdf values
-    files = set()
-    for record in records:
-        if hasattr(record, 'source_pdf'):
-            files.add(record.source_pdf)
-        elif isinstance(record, dict) and 'source_pdf' in record:
-            files.add(record['source_pdf'])
-    return list(files)
-
 async def count_user_records(user_id: Union[int, str], db = None):
     """
     Count bank records for a user
@@ -90,7 +55,7 @@ async def count_user_records(user_id: Union[int, str], db = None):
     Returns:
         Number of records
     """
-    records = db_adapter.get_bank_records_by_user(user_id)
+    records = []
     return len(records)
 
 async def save_raw_extraction(user_id: Union[int, str], filename: str, extraction_data: Dict[str, Any], db = None):

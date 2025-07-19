@@ -21,8 +21,6 @@ from app.utils.file import generate_csv_file, generate_json_file
 from app.services.header_config_service import apply_header_mapping
 from app.db.operations import (
     save_bank_details, 
-    get_user_records, 
-    get_processed_files,
     count_user_records,
     save_raw_extraction,
     get_raw_extractions,

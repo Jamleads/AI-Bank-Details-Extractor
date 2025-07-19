@@ -11,7 +11,7 @@ from app.db.database import get_async_db
 from app.models.user import UserDB
 from app.services.google_drive_service import GoogleDriveService
 from app.utils.auth import get_current_user_required, get_user_id
-from app.db.operations import get_user_records, get_raw_extractions
+from app.db.operations import get_raw_extractions
 from app.db.header_config import get_header_config
 from datetime import datetime
 import traceback

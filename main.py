@@ -166,7 +166,6 @@ async def get_users(
             for user in users:
                 # Get counts for each user
                 user_id = user.get("id")
-                bank_records = db_adapter._db_provider.get_bank_records_by_user(user_id)
                 extractions = db_adapter._db_provider.get_raw_extractions_by_user(user_id)
                 
                 users_list.append({
@@ -177,7 +176,6 @@ async def get_users(
                     "subscription_tier": user.get("subscription_tier", "FREE").upper(),
                     "created_at": user.get("created_at"),
                     "last_login": user.get("last_login"),
-                    "bank_records_count": len(bank_records),
                     "extractions_count": len(extractions),
                     "is_admin": is_admin_email(user.get("email", "")) if user.get("email") else False
                 })
@@ -250,32 +248,14 @@ async def get_stats(
             users_count = len(users)
             
             # This is inefficient but works for small datasets
-            bank_records_count = 0
             extractions_count = 0
             for user in users:
                 user_id = user.get("id")
-                bank_records = db_adapter._db_provider.get_bank_records_by_user(user_id)
                 extractions = db_adapter._db_provider.get_raw_extractions_by_user(user_id)
-                bank_records_count += len(bank_records)
                 extractions_count += len(extractions)
-        else:
-            # For SQLite, use raw SQL queries
-            users_count_query = "SELECT COUNT(*) FROM users"
-            bank_records_count_query = "SELECT COUNT(*) FROM bank_records"
-            extractions_count_query = "SELECT COUNT(*) FROM raw_extractions"
-            
-            users_count_result = await db.execute(users_count_query)
-            users_count = await users_count_result.scalar()
-            
-            bank_records_count_result = await db.execute(bank_records_count_query)
-            bank_records_count = await bank_records_count_result.scalar()
-            
-            extractions_count_result = await db.execute(extractions_count_query)
-            extractions_count = await extractions_count_result.scalar()
-        
+
         return {
             "users_count": users_count or 0,
-            "bank_records_count": bank_records_count or 0,
             "extractions_count": extractions_count or 0
         }
     except Exception as e:
