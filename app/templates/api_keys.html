@@ -14,6 +14,9 @@
         <button id="create-api-key" class="primary-button">
             <i class="fas fa-plus"></i> Generate New API Key
         </button>
+        <a href="/redoc" class="docs-button" target="_blank">
+            <i class="fas fa-book"></i> API Documentation
+        </a>
     </div>
 
     <div class="api-keys-table-container">
@@ -78,6 +81,27 @@
 
     .primary-button:hover {
         background-color: #3a5ce5;
+    }
+
+    .docs-button {
+        background-color: #28a745;
+        color: white;
+        border: none;
+        padding: 10px 20px;
+        border-radius: 4px;
+        cursor: pointer;
+        font-weight: 500;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        margin-left: 10px;
+        text-decoration: none;
+    }
+
+    .docs-button:hover {
+        background-color: #218838;
+        text-decoration: none;
+        color: white;
     }
 
     .api-keys-table-container {
