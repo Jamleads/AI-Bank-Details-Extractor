@@ -89,7 +89,8 @@ class Settings:
         self.RAW_EXTRACTIONS_TABLE_NAME = os.environ.get("RAW_EXTRACTIONS_TABLE_NAME", "raw-extractions")
         self.PAYMENTS_TABLE_NAME = os.environ.get("PAYMENTS_TABLE_NAME", "payments")
         self.USER_CREDENTIALS_TABLE_NAME = os.environ.get("USER_CREDENTIALS_TABLE_NAME", "user-credentials")
-        
+        self.API_KEYS_TABLE_NAME = os.environ.get("API_KEYS_TABLE_NAME", "api-keys")
+
         # DynamoDB Index Names
         self.EMAIL_INDEX_NAME = os.environ.get("EMAIL_INDEX_NAME", "email-index")
         self.GOOGLE_ID_INDEX_NAME = os.environ.get("GOOGLE_ID_INDEX_NAME", "google-id-index")

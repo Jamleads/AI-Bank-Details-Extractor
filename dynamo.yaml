@@ -30,6 +30,10 @@ Parameters:
     Type: String
     Default: user-credentials
 
+  ApiKeysTableName:
+    Type: String
+    Default: api-keys
+
 Resources:
 
   UsersTable:
@@ -168,6 +172,31 @@ Resources:
         - AttributeName: credential_type
           KeyType: RANGE
 
+  ApiKeysTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub ${ApiKeysTableName}
+      BillingMode: PAY_PER_REQUEST
+      SSESpecification:
+        SSEEnabled: true
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
+      AttributeDefinitions:
+        - AttributeName: api_key
+          AttributeType: S
+        - AttributeName: user_id
+          AttributeType: S
+      KeySchema:
+        - AttributeName: api_key
+          KeyType: HASH
+      GlobalSecondaryIndexes:
+        - IndexName: user-id-index
+          KeySchema:
+            - AttributeName: user_id
+              KeyType: HASH
+          Projection:
+            ProjectionType: ALL
+
 Outputs:
   UsersTableOutput:
     Value: !Ref UsersTable
@@ -193,3 +222,8 @@ Outputs:
     Value: !Ref UserCredentialsTable
     Export:
       Name: !Sub ${UserCredentialsTableName}-table
+
+  ApiKeysTableOutput:
+    Value: !Ref ApiKeysTable
+    Export:
+      Name: !Sub ${ApiKeysTableName}-table

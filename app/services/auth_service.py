@@ -33,6 +33,10 @@ oauth.register(
 # JWT setup
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token", auto_error=False)
 
+api_key_routes = [
+    "/api/session-status",
+    "/api/extract",
+]
 
 async def create_user(user_data: UserCreate, db_session: AsyncSession) -> User:
     """
@@ -148,6 +152,19 @@ async def get_current_user(
     return None
 
 
+async def get_user_from_api_key(api_key: str) -> Optional[User]:
+    """
+    Get user from API key
+    """
+    api_key = db.get_api_key(api_key)
+
+    if api_key:
+        user = db.get_user_by_id(api_key.get("user_id"))
+        return user
+    else:
+        return None
+
+
 async def get_current_user_required(
     request: Request = None,
     token: str = Depends(oauth2_scheme), 
@@ -167,6 +184,12 @@ async def get_current_user_required(
     Raises:
         HTTPException: If user is not authenticated
     """
+    if request.headers.get("X-API-KEY"):
+        if request.url.path in api_key_routes:
+            user = await get_user_from_api_key(request.headers.get("X-API-KEY"))
+            if user:
+                return user
+
     user = await get_current_user(request, token, db_session)
     if not user:
         raise HTTPException(

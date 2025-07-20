@@ -17,7 +17,7 @@ from app.services.auth_service import (
     get_current_user, get_current_user_required
 )
 
-router = APIRouter(prefix="/auth", tags=["auth"])
+router = APIRouter(prefix="/auth", tags=["auth"], include_in_schema=False)
 logger = logging.getLogger(__name__)
 
 

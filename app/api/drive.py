@@ -21,7 +21,7 @@ logger = logging.getLogger(__name__)
 logger.setLevel(logging.DEBUG)
 
 # Create router
-router = APIRouter(prefix="/drive", tags=["drive"])
+router = APIRouter(prefix="/drive", tags=["drive"], include_in_schema=False)
 
 
 class DriveExportRequest(BaseModel):

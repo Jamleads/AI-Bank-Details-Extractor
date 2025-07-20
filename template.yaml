@@ -1,0 +1,134 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: Bank Details Extractor Serverless Application
+
+Parameters:
+  Stage:
+    Type: String
+    Default: dev
+    AllowedValues:
+      - dev
+      - prod
+    Description: Deployment stage
+
+  S3BucketName:
+    Type: String
+    Default: bank-details-extractor-files
+    Description: S3 bucket for file storage
+
+  SecretsName:
+    Type: String
+    Default: ai-bank-extractor
+    Description: Name of the Secrets Manager secret
+
+Globals:
+  Function:
+    Timeout: 30
+    MemorySize: 512
+    Runtime: python3.9
+    Environment:
+      Variables:
+        STAGE: !Ref Stage
+        DATABASE_TYPE: dynamodb
+        S3_BUCKET: !Sub "${S3BucketName}-${Stage}"
+        USE_AWS_SECRETS: "true"
+        AWS_SECRETS_NAME: !Sub "${SecretsName}-${Stage}"
+        USE_S3_STORAGE: "true"
+        USERS_TABLE_NAME: users
+        HEADER_CONFIGS_TABLE_NAME: header-configs
+        RAW_EXTRACTIONS_TABLE_NAME: raw-extractions
+        PAYMENTS_TABLE_NAME: payments
+        USER_CREDENTIALS_TABLE_NAME: user-credentials
+        API_KEYS_TABLE_NAME: api-keys
+        EMAIL_INDEX_NAME: email-index
+        GOOGLE_ID_INDEX_NAME: google-id-index
+        USER_ID_INDEX_NAME: user-id-index
+        YATIVO_DEPOSIT_ID_INDEX_NAME: yativo-deposit-id-index
+
+Resources:
+  # Lambda Layer for dependencies
+  DependenciesLayer:
+    Type: AWS::Serverless::LayerVersion
+    Properties:
+      LayerName: !Sub "bank-details-extractor-dependencies-${Stage}"
+      Description: Dependencies for Bank Details Extractor
+      ContentUri: ./layer/
+      CompatibleRuntimes:
+        - python3.9
+      RetentionPolicy: Retain
+
+  # S3 Bucket for file storage
+  FilesBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub "${S3BucketName}-${Stage}"
+      CorsConfiguration:
+        CorsRules:
+          - AllowedHeaders: ['*']
+            AllowedMethods: [GET, PUT, POST, DELETE]
+            AllowedOrigins: ['*']
+            MaxAge: 3600
+
+  # API Gateway
+  ApiGateway:
+    Type: AWS::Serverless::Api
+    Properties:
+      StageName: !Ref Stage
+      BinaryMediaTypes:
+        - "multipart/form-data"
+        - "application/octet-stream"
+        - "image/jpeg"
+        - "image/png"
+        - "application/pdf"
+      Cors:
+        AllowMethods: "'GET,POST,PUT,DELETE,OPTIONS'"
+        AllowHeaders: "'Content-Type,Authorization,X-Amz-Date,X-Api-Key,X-Amz-Security-Token'"
+        AllowOrigin: "'*'"
+        MaxAge: "'3600'"
+
+  # Lambda Function
+  ApiFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: ./
+      Handler: lambda_handler.handler
+      Description: Main API handler for Bank Details Extractor
+      Timeout: 30
+      MemorySize: 1024
+      Layers:
+        - !Ref DependenciesLayer
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !ImportValue users-table
+        - DynamoDBCrudPolicy:
+            TableName: !ImportValue header-configs-table
+        - DynamoDBCrudPolicy:
+            TableName: !ImportValue raw-extractions-table
+        - DynamoDBCrudPolicy:
+            TableName: !ImportValue payments-table
+        - DynamoDBCrudPolicy:
+            TableName: !ImportValue user-credentials-table
+        - S3CrudPolicy:
+            BucketName: !Ref FilesBucket
+      Events:
+        ApiEvent:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /{proxy+}
+            Method: ANY
+        RootPath:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /
+            Method: ANY
+
+Outputs:
+  ApiUrl:
+    Description: URL of the API Gateway endpoint
+    Value: !Sub "https://${ApiGateway}.execute-api.${AWS::Region}.amazonaws.com/${Stage}/"
+
+  FilesBucketName:
+    Description: Name of the S3 bucket for file storage
+    Value: !Ref FilesBucket 

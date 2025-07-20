@@ -11,7 +11,38 @@ from app.api.admin import router as admin_router
 from app.routes import router as web_router
 
 # Create FastAPI app
-app = FastAPI()
+app = FastAPI(
+    title="Invoice Extractor",
+    description="""Extract invoice details from uploaded files
+
+## API Key Authentication
+
+### Getting Your API Key
+
+1. **Log in** to the Invoice Extractor application using your credentials.
+2. Navigate to the **API Keys** section by clicking on the "API Keys" link in the main navigation menu.
+3. On the API Keys page, click the **Generate New API Key** button to create a new API key.
+4. Your new API key will be displayed in the table. Keep this key secure and do not share it with others.
+5. You can create multiple API keys and activate/deactivate them as needed.
+
+### Using Your API Key
+
+To authenticate your API requests, include your API key in the `X-API-Key` header with every request:
+
+```bash
+curl -X POST "https://your-domain.com/api/extract" \\
+  -H "X-API-Key: YOUR_API_KEY" \\
+  -F "files=@/path/to/your/invoice.pdf"
+```
+
+### Security Best Practices
+
+- Keep your API keys secure and never expose them in client-side code
+- Rotate your API keys periodically by generating new ones and deactivating old ones
+- Only use API keys in secure, server-to-server communications
+- If you suspect an API key has been compromised, deactivate it immediately
+""",
+)
 
 # Set up CORS
 app.add_middleware(

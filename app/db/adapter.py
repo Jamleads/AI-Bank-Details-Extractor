@@ -54,12 +54,7 @@ class DatabaseAdapter:
 
     def get_user_by_id(self, user_id: Union[int, str]):
         """Get user by ID"""
-        if self.db_type == "sqlite":
-            from app.db.models import User
-            db = next(self._db_provider())
-            return db.query(User).filter(User.id == user_id).first()
-        else:
-            return self._db_provider.get_user_by_id(str(user_id))
+        return self._db_provider.get_user_by_id(str(user_id))
 
     def create_user(self, user_data: Dict[str, Any]):
         """Create a new user"""
@@ -454,20 +449,27 @@ class DatabaseAdapter:
 
     def delete_user_credentials(self, user_id: Union[int, str], credential_type: str):
         """Delete user credentials"""
-        if self.db_type == "sqlite":
-            # For SQLite, we would need to create a model and table for credentials
-            # For now, we'll just log a warning and use DynamoDB
-            logger.warning("Deleting credentials from SQLite is not implemented, using DynamoDB instead")
-            from app.db.dynamodb import dynamodb_service
-            if isinstance(user_id, int):
-                user_id = str(user_id)
-            return dynamodb_service.delete_user_credentials(user_id, credential_type)
-        else:
-            # Convert user_id to string for DynamoDB
-            if isinstance(user_id, int):
-                user_id = str(user_id)
-            return self._db_provider.delete_user_credentials(user_id, credential_type)
+        # Convert user_id to string for DynamoDB
+        if isinstance(user_id, int):
+            user_id = str(user_id)
+        return self._db_provider.delete_user_credentials(user_id, credential_type)
 
+    # API Keys operations
+    def create_api_key(self, user_id: str):
+        """Create a new API key for a user"""
+        return self._db_provider.create_api_key(user_id)
+
+    def update_api_key_status(self, api_key: str, status: str):
+        """Update the status of an API key"""
+        return self._db_provider.update_api_key_status(api_key, status)
+
+    def get_api_key_by_user_id(self, user_id: str):
+        """Get an API key by user ID"""
+        return self._db_provider.get_api_keys_by_user(user_id)
+
+    def get_api_key(self, api_key: str):
+        """Get an API key by API key"""
+        return self._db_provider.get_api_key(api_key)
 
 # Create a singleton instance
 db = DatabaseAdapter()

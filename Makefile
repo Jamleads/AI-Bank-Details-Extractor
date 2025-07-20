@@ -116,6 +116,7 @@ run-aws:
 	HEADER_CONFIGS_TABLE_NAME=header-configs \
 	RAW_EXTRACTIONS_TABLE_NAME=raw-extractions \
 	PAYMENTS_TABLE_NAME=payments \
+	API_KEYS_TABLE_NAME=api-keys \
 	USER_CREDENTIALS_TABLE_NAME=user-credentials \
 	EMAIL_INDEX_NAME=email-index \
 	GOOGLE_ID_INDEX_NAME=google-id-index \

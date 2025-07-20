@@ -6,6 +6,9 @@ import io
 import zipfile
 import traceback
 import logging
+import json
+import os
+import tempfile
 from typing import List, Dict, Any, Optional, Union
 from fastapi import APIRouter, Depends, File, UploadFile, HTTPException, Request, BackgroundTasks
 from fastapi.responses import FileResponse
@@ -29,19 +32,23 @@ from app.db.operations import (
 from app.db.header_config import get_header_config, ensure_default_config
 from datetime import datetime
 from app.core.admin_config import is_admin_email
+from app.db.dynamodb import DynamoDBService
+from fastapi.responses import RedirectResponse, HTMLResponse
+from fastapi.templating import Jinja2Templates
 
 # Setup logging
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.DEBUG)
 
 # Create router
-router = APIRouter(prefix="/api")
+router = APIRouter(prefix="/api", tags=["document-extraction"])
 
 # Include payment router
 # router.include_router(payment_router, prefix="/payment", tags=["payment"]) # This line was removed as per the new_code, as payment_router is no longer imported.
 
 # Templates
-# templates = Jinja2Templates(directory="app/templates") # This line was removed as per the new_code, as templates are no longer used.
+templates_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "templates")
+templates = Jinja2Templates(directory=templates_dir)
 
 
 # Dependencies
@@ -50,10 +57,9 @@ def get_gemini_service():
     return GeminiService()
 
 
-@router.get("/")
+@router.get("/", include_in_schema=False)
 async def index(request: Request):
     """Main page"""
-    # return templates.TemplateResponse("index.html", {"request": request}) # This line was removed as per the new_code, as templates are no longer used.
     return {"message": "Welcome to the Bank Details Extraction API"}
 
 
@@ -126,7 +132,7 @@ async def extract_zip_files(zip_data: bytes) -> List[Dict[str, Any]]:
         return []
 
 
-@router.post("/extract", response_model=ProcessResponse)
+@router.post("/extract", response_model=ProcessResponse, description="Extract bank details from uploaded files")
 async def extract_bank_details(
     files: List[UploadFile] = File(...),
     header_config_id: Optional[int] = None,
@@ -312,7 +318,7 @@ async def extract_bank_details(
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.get("/session-status", response_model=SessionStatus)
+@router.get("/session-status", response_model=SessionStatus, description="Get the current session status")
 async def get_session_status(
     db: AsyncSession = Depends(get_async_db),
     current_user: UserDB = Depends(get_current_user_required)
@@ -365,7 +371,7 @@ async def get_session_status(
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.post("/clear-session")
+@router.post("/clear-session", include_in_schema=False)
 async def clear_session(
     db: AsyncSession = Depends(get_async_db),
     current_user: UserDB = Depends(get_current_user_required)
@@ -402,7 +408,7 @@ def remove_temp_file(file_path: str):
         logger.error(f"Error removing temporary file {file_path}: {str(e)}")
 
 
-@router.get("/download-csv")
+@router.get("/download-csv", include_in_schema=False)
 async def download_csv(
     background_tasks: BackgroundTasks,
     config_id: Union[int, str] = None,
@@ -536,7 +542,7 @@ async def download_csv(
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.get("/export/csv")
+@router.get("/export/csv", include_in_schema=False)
 async def export_csv(
     background_tasks: BackgroundTasks,
     token: str = None,
@@ -570,7 +576,7 @@ async def export_csv(
     )
 
 
-@router.get("/check_file/{filename}")
+@router.get("/check_file/{filename}", include_in_schema=False)
 async def check_file(
     filename: str,
     current_user: UserDB = Depends(get_current_user_required),
@@ -598,7 +604,7 @@ async def check_file(
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.get("/download-json")
+@router.get("/download-json", include_in_schema=False)
 async def download_json(
     background_tasks: BackgroundTasks,
     config_id: Union[int, str] = None,
@@ -726,7 +732,7 @@ async def download_json(
         raise HTTPException(status_code=500, detail=str(e)) 
 
 
-@router.get("/export/json")
+@router.get("/export/json", include_in_schema=False)
 async def export_json(
     background_tasks: BackgroundTasks,
     token: str = None,
@@ -758,7 +764,7 @@ async def export_json(
     ) 
 
 
-@router.get("/user/is-admin")
+@router.get("/user/is-admin", include_in_schema=False)
 async def check_is_admin(
     current_user: UserDB = Depends(get_current_user_required)
 ):
@@ -778,3 +784,45 @@ async def check_is_admin(
         if email:
             is_admin = is_admin_email(email)
     return {"is_admin": is_admin} 
+
+
+@router.get("/user/api-keys", include_in_schema=False)
+async def get_user_api_keys(
+    current_user: UserDB = Depends(get_current_user_required)
+):
+    """Get all API keys for the current user"""
+    dynamodb_service = DynamoDBService()
+    api_keys = dynamodb_service.get_api_keys_by_user(get_user_id(current_user))
+    return {"api_keys": api_keys}
+
+
+@router.post("/user/api-keys", include_in_schema=False)
+async def create_user_api_key(
+    current_user: UserDB = Depends(get_current_user_required)
+):
+    """Create a new API key for the current user"""
+    dynamodb_service = DynamoDBService()
+    api_key = dynamodb_service.create_api_key(get_user_id(current_user))
+    return {"api_key": api_key}
+
+
+@router.put("/user/api-keys/{api_key}/status", include_in_schema=False)
+async def update_api_key_status(
+    api_key: str,
+    status: str,
+    current_user: UserDB = Depends(get_current_user_required)
+):
+    """Update API key status (active/inactive)"""
+    dynamodb_service = DynamoDBService()
+    # Verify the API key belongs to the current user
+    key_data = dynamodb_service.get_api_key(api_key)
+    if not key_data or key_data.get('user_id') != get_user_id(current_user):
+        raise HTTPException(status_code=404, detail="API key not found")
+    
+    # Only allow valid status values
+    if status not in ['active', 'inactive']:
+        raise HTTPException(status_code=400, detail="Invalid status value")
+    
+    updated_key = dynamodb_service.update_api_key_status(api_key, status)
+    return {"api_key": updated_key} 
+

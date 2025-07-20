@@ -16,7 +16,7 @@ from pydantic import BaseModel
 from app.services.yativo import yativo_service
 from app.db.models import User as UserDBModel, SubscriptionTier
 
-router = APIRouter()
+router = APIRouter(include_in_schema=False)
 
 # Define pricing tiers with amounts
 PRICING = {
@@ -33,7 +33,7 @@ class PaymentInitiateRequest(BaseModel):
     country_code: str = "USA"
 
 
-@router.post("/initiate", response_model=PaymentResponse)
+@router.post("/initiate", response_model=PaymentResponse, include_in_schema=False)
 async def initiate_payment(
     request: PaymentInitiateRequest,
     db: AsyncSession = Depends(get_async_db),
@@ -159,7 +159,7 @@ async def initiate_payment(
         raise HTTPException(status_code=500, detail=f"Payment processing error: {str(e)}")
 
 
-@router.get("/status/{payment_id}", response_model=PaymentResponse)
+@router.get("/status/{payment_id}", response_model=PaymentResponse, include_in_schema=False)
 async def get_payment_status(
     payment_id: int,
     db: AsyncSession = Depends(get_async_db),
@@ -221,7 +221,7 @@ async def get_payment_status(
     )
 
 
-@router.get("/history", response_model=List[PaymentResponse])
+@router.get("/history", response_model=List[PaymentResponse], include_in_schema=False)
 async def get_payment_history(
     db: AsyncSession = Depends(get_async_db),
     current_user: UserDB = Depends(get_current_user_required)
@@ -251,7 +251,7 @@ async def get_payment_history(
     ]
 
 
-@router.post("/webhook")
+@router.post("/webhook", include_in_schema=False)
 async def yativo_webhook(
     request: Request,
     background_tasks: BackgroundTasks,

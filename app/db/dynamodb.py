@@ -17,7 +17,7 @@ HEADER_CONFIGS_TABLE = settings.HEADER_CONFIGS_TABLE_NAME
 RAW_EXTRACTIONS_TABLE = settings.RAW_EXTRACTIONS_TABLE_NAME
 PAYMENTS_TABLE = settings.PAYMENTS_TABLE_NAME
 USER_CREDENTIALS_TABLE = settings.USER_CREDENTIALS_TABLE_NAME
-
+API_KEYS_TABLE = settings.API_KEYS_TABLE_NAME
 
 class DynamoDBService:
     """DynamoDB service for database operations"""
@@ -814,6 +814,80 @@ class DynamoDBService:
         """
         key = self._build_get_user_credentials_key(user_id, credential_type)
         return self._execute_delete_item(USER_CREDENTIALS_TABLE, key)
+
+    # API Keys operations
+    def create_api_key(self, user_id: str) -> Dict[str, Any]:
+        """Create a new API key for a user
+        
+        Args:
+            user_id: User ID
+            
+        Returns:
+            The created API key item
+        """
+        api_key = str(uuid.uuid4())
+        timestamp = datetime.now().isoformat()
+        
+        api_key_item = {
+            'api_key': api_key,
+            'user_id': user_id,
+            'status': 'active',
+            'created_at': timestamp,
+            'updated_at': timestamp
+        }
+        
+        return self._execute_put_item(API_KEYS_TABLE, api_key_item)
+    
+    def update_api_key_status(self, api_key: str, status: str) -> Dict[str, Any]:
+        """Update API key status
+        
+        Args:
+            api_key: The API key to update
+            status: New status ('active' or 'inactive')
+            
+        Returns:
+            The updated API key item
+        """
+        table = self.dynamodb.Table(API_KEYS_TABLE)
+        timestamp = datetime.now().isoformat()
+        
+        response = table.update_item(
+            Key={'api_key': api_key},
+            UpdateExpression="SET #status = :status, updated_at = :updated_at",
+            ExpressionAttributeNames={
+                '#status': 'status'
+            },
+            ExpressionAttributeValues={
+                ':status': status,
+                ':updated_at': timestamp
+            },
+            ReturnValues="ALL_NEW"
+        )
+        
+        return response.get('Attributes', {})
+    
+    def get_api_keys_by_user(self, user_id: str) -> List[Dict[str, Any]]:
+        """Get all API keys for a user
+        
+        Args:
+            user_id: User ID
+            
+        Returns:
+            List of API keys for the user
+        """
+        key_condition = Key('user_id').eq(user_id)
+        return self._execute_query(API_KEYS_TABLE, 'user-id-index', key_condition)
+    
+    def get_api_key(self, api_key: str) -> Optional[Dict[str, Any]]:
+        """Get API key by its value
+        
+        Args:
+            api_key: The API key to retrieve
+            
+        Returns:
+            The API key item if found, None otherwise
+        """
+        return self._execute_get_item(API_KEYS_TABLE, {'api_key': api_key})
 
 
 # Create a singleton instance
