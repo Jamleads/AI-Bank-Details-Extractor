@@ -8,7 +8,6 @@ ADMIN_EMAILS = [
     "salbiz2021@gmail.com",  # User's actual email
     "ogunyemiadetunji17@gmail.com",
     "mikaelcbernard@gmail.com"
-    # Add more admin emails as needed
 ]
 
 def is_admin_email(email: str) -> bool:
@@ -21,4 +20,4 @@ def is_admin_email(email: str) -> bool:
     Returns:
         True if the email is in the admin list, False otherwise
     """
-    return email.lower() in [admin_email.lower() for admin_email in ADMIN_EMAILS] 
+    return email in ADMIN_EMAILS

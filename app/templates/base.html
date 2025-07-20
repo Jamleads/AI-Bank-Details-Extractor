@@ -16,33 +16,38 @@
 
 <body>
     <header class="site-header">
-        <div class="container header-container">
+        <div class="container navbar">
             <a href="/" class="logo">
                 <i class="fas fa-university"></i>
                 <span>BankDetails2CSV</span>
             </a>
 
             {% if current_user %}
-            <div class="user-info desktop-only">
-                <span class="user-name">{{ current_user.name }}</span>
+            <nav class="nav-container">
                 <div class="nav-links">
-                    <a href="/" class="nav-link">Home</a>
-                    <a href="/header-config" class="nav-link">Header Config</a>
-                    <a href="/api-keys" class="nav-link">API Keys</a>
-                    <a href="/pricing" class="nav-link">Pricing</a>
+                    <a href="/" class="nav-link {% if request.path == '/' %}active{% endif %}">Home</a>
+                    <a href="/header-config"
+                        class="nav-link {% if request.path == '/header-config' %}active{% endif %}">Header Config</a>
+                    <a href="/api-keys" class="nav-link {% if request.path == '/api-keys' %}active{% endif %}">API
+                        Keys</a>
+                    <a href="/pricing" class="nav-link {% if request.path == '/pricing' %}active{% endif %}">Pricing</a>
+                </div>
+
+                <div class="user-actions">
+                    <span class="user-name">{{ current_user.name }}</span>
                     {% if is_admin %}
-                    <a href="/admin" class="nav-link admin-link">
+                    <a href="/admin" class="btn btn-admin">
                         <i class="fas fa-user-shield"></i> Admin
                     </a>
                     {% endif %}
-                    <a href="/auth/logout" class="logout-btn">
+                    <a href="/auth/logout" class="btn btn-logout">
                         <i class="fas fa-sign-out-alt"></i> Logout
                     </a>
                 </div>
-            </div>
+            </nav>
 
             <div class="mobile-menu-toggle">
-                <i class="fas fa-user-circle"></i>
+                <i class="fas fa-bars"></i>
             </div>
 
             <div class="mobile-dropdown">
@@ -83,16 +88,38 @@
     </main>
 
     <footer class="site-footer">
-        <div class="container footer-content">
-            <div class="copyright">
-                &copy; 2023 BankDetails2CSV. All rights reserved.
+        <div class="container footer-container">
+            <div class="footer-brand">
+                <a href="/" class="footer-logo">
+                    <i class="fas fa-university"></i>
+                    <span>BankDetails2CSV</span>
+                </a>
+                <p class="copyright">&copy; 2023 BankDetails2CSV. All rights reserved.</p>
             </div>
-            <div class="footer-links">
-                <a href="/privacy" class="footer-link">Privacy</a>
-                <a href="/terms" class="footer-link">Terms</a>
-                <a href="/pricing" class="footer-link">Pricing</a>
-                <a href="/redoc" class="footer-link">API Docs</a>
-                <a href="mailto:contact@bankdetails2csv.com" class="footer-link">Contact</a>
+            <div class="footer-links-container">
+                <div class="footer-links-group">
+                    <h4 class="footer-heading">Product</h4>
+                    <div class="footer-links">
+                        <a href="/" class="footer-link">Home</a>
+                        <a href="/pricing" class="footer-link">Pricing</a>
+                        <a href="/header-config" class="footer-link">Header Config</a>
+                    </div>
+                </div>
+                <div class="footer-links-group">
+                    <h4 class="footer-heading">Resources</h4>
+                    <div class="footer-links">
+                        <a href="/redoc" class="footer-link">API Docs</a>
+                        <a href="/api-keys" class="footer-link">API Keys</a>
+                    </div>
+                </div>
+                <div class="footer-links-group">
+                    <h4 class="footer-heading">Legal</h4>
+                    <div class="footer-links">
+                        <a href="/privacy" class="footer-link">Privacy</a>
+                        <a href="/terms" class="footer-link">Terms</a>
+                        <a href="mailto:contact@bankdetails2csv.com" class="footer-link">Contact</a>
+                    </div>
+                </div>
             </div>
         </div>
     </footer>
