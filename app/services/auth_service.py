@@ -44,6 +44,8 @@ api_key_routes = [
 
 DYNAMIC_ROUTE_PATTERNS = [
     r"^/api/header-config/[^/]+$",
+    r"^/api/admin/users/[^/]+/disable$",
+    r"^/api/admin/stats$"
 ]
 
 def is_api_key_route(path: str) -> bool:
@@ -202,18 +204,16 @@ async def get_current_user_required(
     Raises:
         HTTPException: If user is not authenticated
     """
-
-    if request.headers.get("X-API-KEY"):
-        if is_api_key_route(request.url.path):
-            user = await get_user_from_api_key(request.headers.get("X-API-KEY"))
-            if user:
-                # Check if user is inactive
-                if user.get("status") == "inactive" or getattr(user, "status", None) == "inactive":
-                    raise HTTPException(
-                        status_code=status.HTTP_403_FORBIDDEN,
-                        detail="Your account has been disabled",
-                    )
-                return user
+    print(f"\n\n\n\n\n\nRequest: {request.headers.get("X-API-KEY")} path: {request.url.path}\n\n\n\n\n\n")
+    if request.headers.get("X-API-KEY") and is_api_key_route(request.url.path):
+        user = await get_user_from_api_key(request.headers.get("X-API-KEY"))
+        if user:
+            if user.get("status") == "inactive" or getattr(user, "status", None) == "inactive":
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Your account has been disabled",
+                )
+            return user
 
     user = await get_current_user(request, token, db_session)
     if not user:

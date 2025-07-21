@@ -34,6 +34,7 @@ async def get_admin_user_required(
     Returns:
         Current user if they are an admin
     """
+    logger.info(f"\n\n\n\n\n\n\nCurrent user: {current_user}\n\n\n\n\n\n\n")
     if not current_user.email or not is_admin_email(current_user.email):
         raise HTTPException(status_code=403, detail="Admin access required")
     return current_user
@@ -88,7 +89,7 @@ async def get_users(
 @router.get("/stats")
 async def get_stats(
     db: AsyncSession = Depends(get_async_db),
-    current_user: UserDB = Depends(get_admin_user_required)
+    # current_user: UserDB = Depends(get_admin_user_required)
 ):
     """
     Get system statistics
@@ -137,9 +138,8 @@ async def disable_user(
         Success message
     """
     try:
-        print(f"\n\n\n\n\n\nDisabling user {user_id}\n\n\n\n\n\n")
-        # Also disable all their API keys
-        db_adapter.set_inactive_on_user_id(user_id)
+        # Update user status to inactive
+        db_adapter.update_user(user_id, {"status": "inactive"})
         
         return {"success": True, "message": f"User {user_id} has been disabled"}
     except Exception as e:

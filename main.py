@@ -21,7 +21,7 @@ from app.api.drive import router as drive_router
 from app.api.payment import router as payment_router
 from app.core.config import settings
 from app.db import init_db
-from app.services.auth_service import oauth, get_current_user
+from app.services.auth_service import oauth, get_current_user, get_current_user_required
 from app.db.models import User
 from app.core.admin_config import is_admin_email
 
@@ -169,7 +169,30 @@ from app.db.database import get_async_db
 from app.db.models import User, BankRecord, RawExtraction
 from app.db.adapter import db as db_adapter
 
-admin_router = APIRouter(prefix="/api/admin", tags=["admin"])
+admin_router = APIRouter(prefix="/api/admin", tags=["admin"], include_in_schema=False)
+
+@admin_router.post("/users/{user_id}/disable")
+async def disable_user(
+    user_id: str,
+    current_user: User = Depends(get_current_user_required)
+):
+    """Disable a user by setting their status to inactive
+    
+    Args:
+        user_id: User ID to disable
+        current_user: Current admin user
+        
+    Returns:
+        Success message
+    """
+    try:
+        # Update user status to inactive
+        db_adapter.update_user(user_id, {"status": "inactive"})
+        
+        return {"success": True, "message": f"User {user_id} has been disabled"}
+    except Exception as e:
+        logger.error(f"Error disabling user {user_id}: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to disable user: {str(e)}")
 
 @admin_router.get("/users", include_in_schema=False)
 async def get_users(
@@ -182,74 +205,29 @@ async def get_users(
     user_email = get_user_email(current_user)
     if not user_email or not is_admin_email(user_email):
         raise HTTPException(status_code=403, detail="Admin access required")
-    
+
     try:
-        # For DynamoDB users, we'll use a different approach
-        if db_adapter.db_type != "sqlite":
-            # Get all users from DynamoDB
-            users = db_adapter._db_provider.get_all_users()
-            
-            # Format the response
-            users_list = []
-            for user in users:
-                # Get counts for each user
-                user_id = user.get("id")
-                extractions = db_adapter._db_provider.get_raw_extractions_by_user(user_id)
-                
-                users_list.append({
-                    "id": user_id,
-                    "email": user.get("email"),
-                    "name": user.get("name"),
-                    "google_id": user.get("google_id"),
-                    "subscription_tier": user.get("subscription_tier", "FREE").upper(),
-                    "created_at": user.get("created_at"),
-                    "last_login": user.get("last_login"),
-                    "extractions_count": len(extractions),
-                    "is_admin": is_admin_email(user.get("email", "")) if user.get("email") else False
-                })
-            
-            return users_list
-        
-        # For SQLite, use raw SQL to avoid enum issues
-        query = """
-            SELECT 
-                u.id, u.email, u.google_id, u.name, u.picture, 
-                u.created_at, u.last_login, u.subscription_tier,
-                u.subscription_updated_at,
-                COUNT(DISTINCT b.id) as bank_records_count,
-                COUNT(DISTINCT r.id) as extractions_count
-            FROM 
-                users u
-            LEFT JOIN 
-                bank_records b ON u.id = b.user_id
-            LEFT JOIN 
-                raw_extractions r ON u.id = r.user_id
-            GROUP BY 
-                u.id
-        """
-        
-        result = await db.execute(query)
-        rows = await result.fetchall()
+
+        users = db_adapter._db_provider.get_all_users()
         
         # Format the response
         users_list = []
-        for row in rows:
-            # Convert subscription_tier to uppercase if it's a string
-            subscription_tier = row[7]  # subscription_tier is at index 7
-            if isinstance(subscription_tier, str):
-                subscription_tier = subscription_tier.upper()
+        for user in users:
+            # Get counts for each user
+            user_id = user.get("id")
+            extractions = db_adapter._db_provider.get_raw_extractions_by_user(user_id)
             
             users_list.append({
-                "id": row[0],
-                "email": row[1],
-                "name": row[3],
-                "google_id": row[2],
-                "subscription_tier": subscription_tier,
-                "created_at": row[5].isoformat() if row[5] else None,
-                "last_login": row[6].isoformat() if row[6] else None,
-                "bank_records_count": row[9],
-                "extractions_count": row[10],
-                "is_admin": is_admin_email(row[1]) if row[1] else False
+                "id": user_id,
+                "email": user.get("email"),
+                "name": user.get("name"),
+                "google_id": user.get("google_id"),
+                "subscription_tier": user.get("subscription_tier", "FREE").upper(),
+                "created_at": user.get("created_at"),
+                "last_login": user.get("last_login"),
+                "extractions_count": len(extractions),
+                "status": user.get("status", "active"),
+                "is_admin": is_admin_email(user.get("email", "")) if user.get("email") else False
             })
         
         return users_list
@@ -257,11 +235,12 @@ async def get_users(
         logger.error(f"Error getting users: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Failed to get users: {str(e)}")
 
+
 @admin_router.get("/stats", include_in_schema=False)
 async def get_stats(
     request: Request,
     db = Depends(get_async_db),
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user_required)
 ):
     """Get system statistics"""
     # Check if user is admin
@@ -478,6 +457,20 @@ async def admin_page(request: Request, current_user: User = Depends(get_current_
             "auth_token": auth_token
         }
     )
+
+
+@app.get("/disabled")
+async def disabled(request: Request):
+    """
+    Render the disabled account page
+    
+    Args:
+        request: FastAPI request
+        
+    Returns:
+        HTML response
+    """
+    return templates.TemplateResponse("disabled.html", {"request": request})
 
 
 @app.get("/api-keys", include_in_schema=False)
