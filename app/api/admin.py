@@ -34,7 +34,6 @@ async def get_admin_user_required(
     Returns:
         Current user if they are an admin
     """
-    logger.info(f"\n\n\n\n\n\n\nCurrent user: {current_user}\n\n\n\n\n\n\n")
     if not current_user.email or not is_admin_email(current_user.email):
         raise HTTPException(status_code=403, detail="Admin access required")
     return current_user

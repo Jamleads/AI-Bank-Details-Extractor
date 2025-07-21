@@ -123,13 +123,3 @@ run-aws:
 	USER_ID_INDEX_NAME=user-id-index \
 	YATIVO_DEPOSIT_ID_INDEX_NAME=yativo-deposit-id-index \
 	python main.py
-
-# Create necessary secrets in AWS Secrets Manager
-create-secrets:
-	@echo "Creating secrets in AWS Secrets Manager..."
-	aws secretsmanager create-secret \
-		--name ai-bank \
-		--description "Secrets for AI Bank Details Extractor" \
-		--secret-string '{"API_KEY":"AIzaSyCrjP4HBMC0RataUj4sThVhVjJZe1xTfXo", "SECRET_KEY":"your-super-secret-key-change-this-in-production", "GOOGLE_CLIENT_ID":"783810249351-qcc3uu1mblul8aoco9h0rvoh91cvqjsk.apps.googleusercontent.com", "GOOGLE_CLIENT_SECRET":"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", "YATIVO_SECRET_KEY":"0423145c-4059-4529-b97f-1fb14b2d8e9c"}' \
-		--region $(AWS_REGION) || echo "Secret already exists"
-	@echo "Secrets created/updated" 

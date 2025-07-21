@@ -17,7 +17,7 @@ logger = logging.getLogger(__name__)
 logger.setLevel(logging.DEBUG)
 
 # Create router
-router = APIRouter(prefix="/ads", tags=["ads"])
+router = APIRouter(prefix="/ads", tags=["ads"], include_in_schema=False)
 
 
 async def get_admin_user_required(
@@ -32,7 +32,7 @@ async def get_admin_user_required(
     Returns:
         Current user if they are an admin
     """
-    if not current_user.email or not is_admin_email(current_user.email):
+    if not current_user.get("email") or not is_admin_email(current_user.get("email"))   :
         raise HTTPException(status_code=403, detail="Admin access required")
     return current_user
 

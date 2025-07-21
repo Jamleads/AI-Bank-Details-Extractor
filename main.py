@@ -19,6 +19,7 @@ from app.api.auth import router as auth_router
 from app.api.header_config import router as header_config_router
 from app.api.drive import router as drive_router
 from app.api.payment import router as payment_router
+from app.api.ads import router as ads_router
 from app.core.config import settings
 from app.db import init_db
 from app.services.auth_service import oauth, get_current_user, get_current_user_required
@@ -161,7 +162,7 @@ app.include_router(auth_router)
 app.include_router(header_config_router)
 app.include_router(drive_router)
 app.include_router(payment_router, prefix="/api/payment", tags=["payment"])
-
+app.include_router(ads_router, prefix="/api", tags=["ads"], include_in_schema=False)
 # Create and include admin router
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import func, select
@@ -459,7 +460,7 @@ async def admin_page(request: Request, current_user: User = Depends(get_current_
     )
 
 
-@app.get("/disabled")
+@app.get("/disabled", include_in_schema=False)
 async def disabled(request: Request):
     """
     Render the disabled account page
