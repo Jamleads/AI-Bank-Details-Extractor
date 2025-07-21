@@ -18,7 +18,9 @@ from app.db.database import get_async_db
 from app.models.user import UserDB
 from app.models.bank_details import BankDetail
 from app.models.response import ProcessResponse, SessionStatus
+from app.models.file_upload import FileUploads
 from app.services.gemini_service import GeminiService
+from app.services.s3_service import S3Service
 from app.utils.auth import get_current_user_required, get_user_id
 from app.utils.file import generate_csv_file, generate_json_file
 from app.services.header_config_service import apply_header_mapping
@@ -35,6 +37,8 @@ from app.core.admin_config import is_admin_email
 from app.db.dynamodb import DynamoDBService
 from fastapi.responses import RedirectResponse, HTMLResponse
 from fastapi.templating import Jinja2Templates
+
+from stream_unzip import async_stream_unzip
 
 # Setup logging
 logger = logging.getLogger(__name__)
@@ -131,6 +135,31 @@ async def extract_zip_files(zip_data: bytes) -> List[Dict[str, Any]]:
         logger.error(traceback.format_exc())
         return []
 
+async def extract_zip_files_async(zip_data: bytes) -> List[Dict[str, Any]]:
+    async def byte_stream():
+        yield zip_data
+
+    extracted = []
+    async for filename, size, chunks in async_stream_unzip(byte_stream()):
+        # Decode filename if it's bytes
+        if isinstance(filename, bytes):
+            filename = filename.decode('utf-8')
+            
+        ext = filename.lower().rsplit('.', 1)[-1] if '.' in filename else ''
+        ext = f".{ext}"
+
+        if ext in {'.pdf', '.png', '.jpg', '.jpeg', '.webp'}:
+            data = b''
+            async for chunk in chunks:
+                # Ensure chunk is bytes
+                if isinstance(chunk, str):
+                    chunk = chunk.encode()
+                data += chunk
+
+            if len(data) > 100:
+                extracted.append({'filename': filename, 'data': data, 'ext': ext})
+
+    return extracted
 
 @router.post("/extract", response_model=ProcessResponse, description="Extract bank details from uploaded files")
 async def extract_bank_details(
@@ -212,7 +241,7 @@ async def extract_bank_details(
                     logger.debug(f"Processing ZIP file: {filename}")
                     
                     # Extract files from ZIP
-                    extracted_files = await extract_zip_files(file_content)
+                    extracted_files = await extract_zip_files_async(file_content)
                     
                     if not extracted_files:
                         logger.warning(f"No valid files found in ZIP: {filename}")
@@ -236,7 +265,7 @@ async def extract_bank_details(
                         
                         try:
                             # Extract bank details with Gemini
-                            json_data = gemini_service.extract_bank_details(extracted_data, extracted_ext, header_config)
+                            json_data = await gemini_service.extract_bank_details_async(extracted_data, extracted_ext, header_config)
                             logger.debug(f"Gemini API returned JSON data for file {json_data}")
                             
                             # Save raw extraction data
@@ -265,7 +294,7 @@ async def extract_bank_details(
                 else:
                     # Process regular file (PDF, PNG, JPG, JPEG, WebP)
                     # Extract bank details with Gemini
-                    json_data = gemini_service.extract_bank_details(file_content, file_ext, header_config)
+                    json_data = await gemini_service.extract_bank_details_async(file_content, file_ext, header_config)
                     
                     # Save raw extraction data
                     logger.debug(f"Saving raw extraction data for file {filename} and data \n\n {json_data}")
@@ -825,4 +854,21 @@ async def update_api_key_status(
     
     updated_key = dynamodb_service.update_api_key_status(api_key, status)
     return {"api_key": updated_key} 
+
+
+# endpoint that returns a number presigned urls to the s3 bucket
+@router.get("/user/presigned-urls", include_in_schema=False)
+async def get_presigned_urls(
+    filesUploads: FileUploads,
+    current_user: UserDB = Depends(get_current_user_required),
+):
+    """Get presigned URLs for the current user"""
+    s3_service = S3Service()
+    presigned_urls = []
+    # save the presigned urls to the database
+    for file_upload in filesUploads.file_uploads:
+        presigned_url = s3_service.generate_presigned_url(get_user_id(current_user))
+        presigned_urls.append(presigned_url)
+    
+    return {"presigned_urls": presigned_urls}
 

@@ -81,6 +81,14 @@ async function checkAuth() {
         if (response.ok) {
             // Store user info
             currentUser = await response.json();
+
+            // Check if user is disabled (status is inactive)
+            if (currentUser.status === 'inactive') {
+                // Redirect to disabled page
+                window.location.href = '/disabled';
+                return false;
+            }
+
             return true;
         } else {
             // Clear invalid token

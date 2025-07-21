@@ -34,6 +34,7 @@ Globals:
         USE_AWS_SECRETS: "true"
         AWS_SECRETS_NAME: !Sub "${SecretsName}-${Stage}"
         USE_S3_STORAGE: "true"
+        S3_EVENTS_BUCKET: !ImportValue EventsS3Bucket
         USERS_TABLE_NAME: users
         HEADER_CONFIGS_TABLE_NAME: header-configs
         RAW_EXTRACTIONS_TABLE_NAME: raw-extractions
@@ -57,18 +58,6 @@ Resources:
         - python3.9
       RetentionPolicy: Retain
 
-  # S3 Bucket for file storage
-  FilesBucket:
-    Type: AWS::S3::Bucket
-    Properties:
-      BucketName: !Sub "${S3BucketName}-${Stage}"
-      CorsConfiguration:
-        CorsRules:
-          - AllowedHeaders: ['*']
-            AllowedMethods: [GET, PUT, POST, DELETE]
-            AllowedOrigins: ['*']
-            MaxAge: 3600
-
   # API Gateway
   ApiGateway:
     Type: AWS::Serverless::Api
@@ -82,7 +71,7 @@ Resources:
         - "application/pdf"
       Cors:
         AllowMethods: "'GET,POST,PUT,DELETE,OPTIONS'"
-        AllowHeaders: "'Content-Type,Authorization,X-Amz-Date,X-Api-Key,X-Amz-Security-Token'"
+        AllowHeaders: "'Content-Type,Authorization,X-Amz-Date,X-Api-Key,X-Amz-Security-Token,X-API-KEY'"
         AllowOrigin: "'*'"
         MaxAge: "'3600'"
 
@@ -109,7 +98,7 @@ Resources:
         - DynamoDBCrudPolicy:
             TableName: !ImportValue user-credentials-table
         - S3CrudPolicy:
-            BucketName: !Ref FilesBucket
+            BucketName: !ImportValue EventsS3Bucket
       Events:
         ApiEvent:
           Type: Api
@@ -128,7 +117,3 @@ Outputs:
   ApiUrl:
     Description: URL of the API Gateway endpoint
     Value: !Sub "https://${ApiGateway}.execute-api.${AWS::Region}.amazonaws.com/${Stage}/"
-
-  FilesBucketName:
-    Description: Name of the S3 bucket for file storage
-    Value: !Ref FilesBucket 

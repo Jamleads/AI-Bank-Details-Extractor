@@ -10,6 +10,7 @@ import zipfile
 from typing import Dict, Any, List, Optional, Tuple
 
 import google.generativeai as genai
+import httpx
 from fastapi import HTTPException
 from PyPDF2 import PdfReader
 from PIL import Image
@@ -29,9 +30,10 @@ class GeminiService:
         """Initialize the Gemini service with API key"""
         logger.debug("Initializing Gemini service")
         try:
-            genai.configure(api_key="AIzaSyCrjP4HBMC0RataUj4sThVhVjJZe1xTfXo")
-            print(f"\n\n\n\n\n\nAPI Key: {settings.API_KEY}\n\n\n\n\n")
+            genai.configure(api_key=settings.API_KEY)
             self.model = genai.GenerativeModel('gemini-2.5-flash-preview-05-20')
+            self.api_key = settings.API_KEY
+            self.api_url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent"
             logger.debug("Gemini service initialized successfully")
         except Exception as e:
             logger.error(f"Error initializing Gemini service: {str(e)}")
@@ -426,3 +428,134 @@ class GeminiService:
             logger.error(traceback.format_exc())
             # Fallback: return empty dict if JSON parsing fails
             return {} 
+
+    async def extract_bank_details_async(self, file_data: bytes, file_ext: str = '.pdf', header_config: Optional[HeaderConfig] = None) -> Dict[str, Any]:
+        """
+        Extract bank details from PDF or image using Gemini AI asynchronously
+        
+        Args:
+            file_data: Raw file data (PDF or image)
+            file_ext: File extension to determine file type (.pdf, .png, .jpg, .jpeg, .webp)
+            header_config: Optional header configuration to customize extraction fields
+            
+        Returns:
+            Dictionary containing the raw JSON data from Gemini
+            
+        Raises:
+            HTTPException: If processing fails
+        """
+        try:
+            logger.debug(f"Extracting bank details asynchronously from file with extension {file_ext}, size: {len(file_data)} bytes")
+            
+            # Validate file based on type
+            is_valid = False
+            mime_type = ""
+            
+            if file_ext.lower() == '.pdf':
+                is_valid = self._validate_pdf(file_data)
+                mime_type = "application/pdf"
+                if not is_valid:
+                    raise HTTPException(
+                        status_code=400, 
+                        detail="Invalid PDF file: The document appears to be empty or corrupted"
+                    )
+            elif file_ext.lower() in ['.png', '.jpg', '.jpeg', '.webp']:
+                is_valid = self._validate_image(file_data)
+                if file_ext.lower() == '.png':
+                    mime_type = "image/png"
+                elif file_ext.lower() == '.webp':
+                    mime_type = "image/webp"
+                else:
+                    mime_type = "image/jpeg"
+                if not is_valid:
+                    raise HTTPException(
+                        status_code=400, 
+                        detail="Invalid image file: The image appears to be empty or corrupted"
+                    )
+            else:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Unsupported file format: {file_ext}"
+                )
+            
+            # Create prompt for Gemini based on header configuration
+            prompt_text = self._create_prompt(header_config)
+            
+            # Encode file data to base64
+            encoded_file = base64.b64encode(file_data).decode('utf-8')
+            
+            # Prepare request payload
+            payload = {
+                "contents": [
+                    {
+                        "parts": [
+                            {
+                                "inlineData": {
+                                    "mimeType": mime_type,
+                                    "data": encoded_file
+                                }
+                            },
+                            {
+                                "text": prompt_text
+                            }
+                        ]
+                    }
+                ]
+            }
+            
+            # Make async API call
+            logger.debug("Calling Gemini API asynchronously...")
+            async with httpx.AsyncClient(timeout=60.0) as client:
+                response = await client.post(
+                    f"{self.api_url}?key={self.api_key}",
+                    json=payload,
+                    headers={"Content-Type": "application/json"}
+                )
+                
+                # Check for HTTP errors
+                if response.status_code != 200:
+                    logger.error(f"Gemini API error: {response.status_code} - {response.text}")
+                    raise HTTPException(
+                        status_code=response.status_code,
+                        detail=f"Gemini API error: {response.text}"
+                    )
+                
+                # Parse response
+                response_data = response.json()
+                logger.debug("Received response from Gemini API")
+                
+                # Check if response contains content
+                if not response_data.get("candidates"):
+                    logger.warning("No candidates in Gemini response")
+                    raise HTTPException(status_code=500, detail="No valid response received from Gemini")
+                
+                # Check for safety issues
+                candidate = response_data["candidates"][0]
+                if candidate.get("finishReason") == "SAFETY":
+                    logger.warning("Gemini response was blocked due to safety concerns")
+                    raise HTTPException(status_code=400, detail="Content was blocked due to safety concerns")
+                
+                # Extract text from response
+                content = candidate.get("content", {})
+                parts = content.get("parts", [])
+                
+                if not parts or "text" not in parts[0]:
+                    logger.warning("No text in Gemini response")
+                    raise HTTPException(status_code=500, detail="No text response received from Gemini")
+                
+                response_text = parts[0]["text"]
+                
+                # Parse the response
+                logger.debug(f"Parsing response: \n\n\n{response_text}")
+                json_data = self._parse_response(response_text)
+                logger.debug(f"Parsed JSON data from response")
+                return json_data
+                
+        except HTTPException as he:
+            # Re-raise HTTP exceptions
+            logger.error(f"HTTP Exception in extract_bank_details_async: {str(he)}")
+            raise
+        except Exception as e:
+            logger.error(f"Error in extract_bank_details_async: {str(e)}")
+            logger.error(traceback.format_exc())
+            raise HTTPException(status_code=500, detail=f"Failed to process with Gemini AI: {str(e)}") 

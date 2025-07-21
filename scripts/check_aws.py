@@ -79,22 +79,22 @@ def check_secrets_manager():
 
 def check_s3_bucket():
     """Check access to S3 bucket"""
-    if not settings.S3_BUCKET:
+    if not settings.S3_EVENTS_BUCKET:
         logger.warning("No S3 bucket configured. Skipping S3 check.")
         return False
     
     try:
-        logger.info(f"Checking access to S3 bucket: {settings.S3_BUCKET}")
+        logger.info(f"Checking access to S3 bucket: {settings.S3_EVENTS_BUCKET}")
         session = boto3.Session(region_name=settings.AWS_REGION)
         s3 = session.client('s3')
         
         # Test if bucket exists
         try:
-            s3.head_bucket(Bucket=settings.S3_BUCKET)
-            logger.info(f"S3 bucket {settings.S3_BUCKET} exists and is accessible")
+            s3.head_bucket(Bucket=settings.S3_EVENTS_BUCKET)
+            logger.info(f"S3 bucket {settings.S3_EVENTS_BUCKET} exists and is accessible")
             
             # Test listing objects
-            response = s3.list_objects_v2(Bucket=settings.S3_BUCKET, MaxKeys=5)
+            response = s3.list_objects_v2(Bucket=settings.S3_EVENTS_BUCKET, MaxKeys=5)
             if 'Contents' in response:
                 logger.info(f"Successfully listed objects in bucket. Found {len(response['Contents'])} objects.")
             else:
@@ -103,9 +103,9 @@ def check_s3_bucket():
             return True
         except ClientError as e:
             if e.response['Error']['Code'] == '404':
-                logger.error(f"S3 bucket {settings.S3_BUCKET} does not exist")
+                logger.error(f"S3 bucket {settings.S3_EVENTS_BUCKET} does not exist")
             elif e.response['Error']['Code'] == '403':
-                logger.error(f"Access denied to S3 bucket {settings.S3_BUCKET}")
+                logger.error(f"Access denied to S3 bucket {settings.S3_EVENTS_BUCKET}")
             else:
                 logger.error(f"Error accessing S3 bucket: {str(e)}")
             return False

@@ -90,6 +90,11 @@
         color: #880e4f;
     }
 
+    .badge-inactive {
+        background-color: #ffebee;
+        color: #b71c1c;
+    }
+
     .search-box {
         margin-bottom: 20px;
         width: 100%;
@@ -115,6 +120,25 @@
         animation: spin 1s linear infinite;
     }
 
+    .btn-disable {
+        background-color: #f44336;
+        color: white;
+        border: none;
+        padding: 5px 10px;
+        border-radius: 4px;
+        cursor: pointer;
+        font-size: 12px;
+    }
+
+    .btn-disable:hover {
+        background-color: #d32f2f;
+    }
+
+    .btn-disable:disabled {
+        background-color: #bdbdbd;
+        cursor: not-allowed;
+    }
+
     @keyframes spin {
         0% {
             transform: rotate(0deg);
@@ -136,10 +160,6 @@
         <div class="stat-card">
             <h3>Total Users</h3>
             <div class="stat-value" id="users-count">-</div>
-        </div>
-        <div class="stat-card">
-            <h3>Total Bank Records</h3>
-            <div class="stat-value" id="records-count">-</div>
         </div>
         <div class="stat-card">
             <h3>Total Extractions</h3>
@@ -164,6 +184,8 @@
                     <th>Created</th>
                     <th>Last Login</th>
                     <th>Extractions</th>
+                    <th>Status</th>
+                    <th>Actions</th>
                 </tr>
             </thead>
             <tbody id="users-table-body">
@@ -224,7 +246,6 @@
                 })
                 .then(stats => {
                     document.getElementById('users-count').textContent = stats.users_count;
-                    document.getElementById('records-count').textContent = stats.bank_records_count;
                     document.getElementById('extractions-count').textContent = stats.extractions_count;
                 })
                 .catch(error => {
@@ -273,6 +294,12 @@
                 const createdAt = user.created_at ? new Date(user.created_at).toLocaleDateString() : 'N/A';
                 const lastLogin = user.last_login ? new Date(user.last_login).toLocaleDateString() : 'N/A';
 
+                // Determine user status
+                const status = user.status || 'active';
+                const statusBadge = status === 'inactive'
+                    ? '<span class="badge badge-inactive">Inactive</span>'
+                    : '<span class="badge badge-success">Active</span>';
+
                 row.innerHTML = `
                     <td>${user.id}</td>
                     <td>${user.name || 'N/A'}</td>
@@ -284,6 +311,17 @@
                     <td>${createdAt}</td>
                     <td>${lastLogin}</td>
                     <td>${user.extractions_count}</td>
+                    <td>${statusBadge}</td>
+                    <td>
+                        <button 
+                            class="btn-disable" 
+                            data-user-id="${user.id}" 
+                            ${user.is_admin || status === 'inactive' ? 'disabled' : ''}
+                            onclick="disableUser('${user.id}', this)"
+                        >
+                            Disable
+                        </button>
+                    </td>
                 `;
 
                 tableBody.appendChild(row);
@@ -305,5 +343,44 @@
             });
         }
     });
+
+    // Function to disable a user
+    function disableUser(userId, buttonElement) {
+        if (!confirm('Are you sure you want to disable this user? They will no longer be able to access the system.')) {
+            return;
+        }
+
+        const token = localStorage.getItem('auth_token');
+
+        // Disable the button to prevent multiple clicks
+        buttonElement.disabled = true;
+        buttonElement.textContent = 'Disabling...';
+
+        fetch(`/api/admin/users/${userId}/disable`, {
+            method: 'POST',
+            headers: {
+                'Authorization': `Bearer ${token}`,
+                'Content-Type': 'application/json'
+            }
+        })
+            .then(response => {
+                if (!response.ok) {
+                    throw new Error(`Error: ${response.status}`);
+                }
+                return response.json();
+            })
+            .then(data => {
+                alert('User has been disabled successfully');
+                // Reload the page to refresh the user list
+                window.location.reload();
+            })
+            .catch(error => {
+                console.error('Error disabling user:', error);
+                alert(`Failed to disable user: ${error.message}`);
+                // Re-enable the button
+                buttonElement.disabled = false;
+                buttonElement.textContent = 'Disable';
+            });
+    }
 </script>
 {% endblock %}

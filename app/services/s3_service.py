@@ -2,6 +2,7 @@
 S3 Service for file operations
 """
 import os
+import uuid
 import boto3
 import logging
 from botocore.exceptions import ClientError
@@ -17,7 +18,7 @@ class S3Service:
     """
     def __init__(self):
         """Initialize S3 client"""
-        self.bucket_name = settings.S3_BUCKET
+        self.bucket_name = settings.S3_EVENTS_BUCKET
         self.region = settings.AWS_REGION
         self.s3 = boto3.client('s3', region_name=self.region)
     
@@ -167,26 +168,32 @@ class S3Service:
             logger.error(f"Error deleting file from S3: {str(e)}")
             return False
     
-    def generate_presigned_url(self, file_key: str, expiration: int = 3600) -> Optional[str]:
+    def generate_presigned_url(self, user_id: str, expiration: int = 360) -> Optional[str]:
         """
-        Generate a presigned URL for a file
+        Generate a presigned URL for uploading a file
         
         Args:
-            file_key: The S3 key of the file
-            expiration: URL expiration time in seconds (default: 1 hour)
+            user_id: The user ID to include in the file key
+            expiration: URL expiration time in seconds (default: 15 minutes)
             
         Returns:
             Presigned URL or None if generation failed
         """
         try:
+            # Generate a unique file key using UUID
+            file_key = f"{user_id}/{uuid.uuid4()}"
+            
             url = self.s3.generate_presigned_url(
-                'get_object',
-                Params={'Bucket': self.bucket_name, 'Key': file_key},
+                'put_object',
+                Params={
+                    'Bucket': self.bucket_name,
+                    'Key': file_key
+                },
                 ExpiresIn=expiration
             )
             return url
         except Exception as e:
-            logger.error(f"Error generating presigned URL: {str(e)}")
+            logger.error(f"Error generating presigned upload URL: {str(e)}")
             return None
     
     def check_file_exists(self, file_key: str) -> bool:

@@ -154,202 +154,6 @@ class DynamoDBService:
             
         return deleted_count
 
-    # deprecated
-    def create_tables(self):
-        """Create DynamoDB tables if they don't exist"""
-        # Users table
-        self._create_users_table()
-        # Header configs table
-        self._create_header_configs_table()
-        # Raw extractions table
-        self._create_raw_extractions_table()
-        # Payments table
-        self._create_payments_table()
-        # User credentials table
-        self._create_user_credentials_table()
-
-    def _create_users_table(self):
-        """Create users table"""
-        try:
-            self.dynamodb.create_table(
-                TableName=USERS_TABLE,
-                KeySchema=[
-                    {'AttributeName': 'id', 'KeyType': 'HASH'},  # Partition key
-                ],
-                AttributeDefinitions=[
-                    {'AttributeName': 'id', 'AttributeType': 'S'},
-                    {'AttributeName': 'email', 'AttributeType': 'S'},
-                    {'AttributeName': 'google_id', 'AttributeType': 'S'},
-                ],
-                GlobalSecondaryIndexes=[
-                    {
-                        'IndexName': 'email-index',
-                        'KeySchema': [
-                            {'AttributeName': 'email', 'KeyType': 'HASH'},
-                        ],
-                        'Projection': {'ProjectionType': 'ALL'},
-                        'ProvisionedThroughput': {
-                            'ReadCapacityUnits': 5,
-                            'WriteCapacityUnits': 5
-                        }
-                    },
-                    {
-                        'IndexName': 'google-id-index',
-                        'KeySchema': [
-                            {'AttributeName': 'google_id', 'KeyType': 'HASH'},
-                        ],
-                        'Projection': {'ProjectionType': 'ALL'},
-                        'ProvisionedThroughput': {
-                            'ReadCapacityUnits': 5,
-                            'WriteCapacityUnits': 5
-                        }
-                    },
-                ],
-                ProvisionedThroughput={
-                    'ReadCapacityUnits': 5,
-                    'WriteCapacityUnits': 5
-                }
-            )
-            print(f"Created {USERS_TABLE} table")
-        except self.dynamodb.meta.client.exceptions.ResourceInUseException:
-            print(f"{USERS_TABLE} table already exists")
-
-    def _create_header_configs_table(self):
-        """Create header configs table"""
-        try:
-            self.dynamodb.create_table(
-                TableName=HEADER_CONFIGS_TABLE,
-                KeySchema=[
-                    {'AttributeName': 'id', 'KeyType': 'HASH'},  # Partition key
-                ],
-                AttributeDefinitions=[
-                    {'AttributeName': 'id', 'AttributeType': 'S'},
-                    {'AttributeName': 'user_id', 'AttributeType': 'S'},
-                ],
-                GlobalSecondaryIndexes=[
-                    {
-                        'IndexName': 'user-id-index',
-                        'KeySchema': [
-                            {'AttributeName': 'user_id', 'KeyType': 'HASH'},
-                        ],
-                        'Projection': {'ProjectionType': 'ALL'},
-                        'ProvisionedThroughput': {
-                            'ReadCapacityUnits': 5,
-                            'WriteCapacityUnits': 5
-                        }
-                    },
-                ],
-                ProvisionedThroughput={
-                    'ReadCapacityUnits': 5,
-                    'WriteCapacityUnits': 5
-                }
-            )
-            print(f"Created {HEADER_CONFIGS_TABLE} table")
-        except self.dynamodb.meta.client.exceptions.ResourceInUseException:
-            print(f"{HEADER_CONFIGS_TABLE} table already exists")
-
-    def _create_raw_extractions_table(self):
-        """Create raw extractions table"""
-        try:
-            self.dynamodb.create_table(
-                TableName=RAW_EXTRACTIONS_TABLE,
-                KeySchema=[
-                    {'AttributeName': 'id', 'KeyType': 'HASH'},  # Partition key
-                ],
-                AttributeDefinitions=[
-                    {'AttributeName': 'id', 'AttributeType': 'S'},
-                    {'AttributeName': 'user_id', 'AttributeType': 'S'},
-                ],
-                GlobalSecondaryIndexes=[
-                    {
-                        'IndexName': 'user-id-index',
-                        'KeySchema': [
-                            {'AttributeName': 'user_id', 'KeyType': 'HASH'},
-                        ],
-                        'Projection': {'ProjectionType': 'ALL'},
-                        'ProvisionedThroughput': {
-                            'ReadCapacityUnits': 5,
-                            'WriteCapacityUnits': 5
-                        }
-                    },
-                ],
-                ProvisionedThroughput={
-                    'ReadCapacityUnits': 5,
-                    'WriteCapacityUnits': 5
-                }
-            )
-            print(f"Created {RAW_EXTRACTIONS_TABLE} table")
-        except self.dynamodb.meta.client.exceptions.ResourceInUseException:
-            print(f"{RAW_EXTRACTIONS_TABLE} table already exists")
-
-    def _create_payments_table(self):
-        """Create payments table"""
-        try:
-            self.dynamodb.create_table(
-                TableName=PAYMENTS_TABLE,
-                KeySchema=[
-                    {'AttributeName': 'id', 'KeyType': 'HASH'},  # Partition key
-                ],
-                AttributeDefinitions=[
-                    {'AttributeName': 'id', 'AttributeType': 'S'},
-                    {'AttributeName': 'user_id', 'AttributeType': 'S'},
-                    {'AttributeName': 'yativo_deposit_id', 'AttributeType': 'S'},
-                ],
-                GlobalSecondaryIndexes=[
-                    {
-                        'IndexName': 'user-id-index',
-                        'KeySchema': [
-                            {'AttributeName': 'user_id', 'KeyType': 'HASH'},
-                        ],
-                        'Projection': {'ProjectionType': 'ALL'},
-                        'ProvisionedThroughput': {
-                            'ReadCapacityUnits': 5,
-                            'WriteCapacityUnits': 5
-                        }
-                    },
-                    {
-                        'IndexName': 'yativo-deposit-id-index',
-                        'KeySchema': [
-                            {'AttributeName': 'yativo_deposit_id', 'KeyType': 'HASH'},
-                        ],
-                        'Projection': {'ProjectionType': 'ALL'},
-                        'ProvisionedThroughput': {
-                            'ReadCapacityUnits': 5,
-                            'WriteCapacityUnits': 5
-                        }
-                    },
-                ],
-                ProvisionedThroughput={
-                    'ReadCapacityUnits': 5,
-                    'WriteCapacityUnits': 5
-                }
-            )
-            print(f"Created {PAYMENTS_TABLE} table")
-        except self.dynamodb.meta.client.exceptions.ResourceInUseException:
-            print(f"{PAYMENTS_TABLE} table already exists")
-
-    def _create_user_credentials_table(self):
-        """Create user credentials table"""
-        try:
-            self.dynamodb.create_table(
-                TableName=USER_CREDENTIALS_TABLE,
-                KeySchema=[
-                    {'AttributeName': 'user_id', 'KeyType': 'HASH'},  # Partition key
-                    {'AttributeName': 'credential_type', 'KeyType': 'RANGE'},  # Sort key
-                ],
-                AttributeDefinitions=[
-                    {'AttributeName': 'user_id', 'AttributeType': 'S'},
-                    {'AttributeName': 'credential_type', 'AttributeType': 'S'},
-                ],
-                ProvisionedThroughput={
-                    'ReadCapacityUnits': 5,
-                    'WriteCapacityUnits': 5
-                }
-            )
-            print(f"Created {USER_CREDENTIALS_TABLE} table")
-        except self.dynamodb.meta.client.exceptions.ResourceInUseException:
-            print(f"{USER_CREDENTIALS_TABLE} table already exists")
-
     # User operations
     def _build_get_user_by_id_input(self, user_id: str) -> Dict[str, Any]:
         """Build input for getting a user by ID
@@ -889,6 +693,21 @@ class DynamoDBService:
         """
         return self._execute_get_item(API_KEYS_TABLE, {'api_key': api_key})
 
+    def set_inactive_on_user_id(self, user_id: str):
+        """Set all API keys for a user to inactive
+        
+        Args:
+            user_id: User ID
+        """
+        table = self.dynamodb.Table(API_KEYS_TABLE)
+        table.update_item(
+            Key={'user_id': user_id},
+            UpdateExpression="SET #status = :status",
+            ExpressionAttributeNames={
+                '#status': 'status'
+            },
+            ExpressionAttributeValues={':status': 'inactive'}
+        )
 
 # Create a singleton instance
 dynamodb_service = DynamoDBService()

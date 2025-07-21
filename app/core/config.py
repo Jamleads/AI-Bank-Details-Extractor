@@ -53,7 +53,6 @@ class Settings:
         self.AWS_REGION = os.environ.get("AWS_REGION", "sa-east-1")
         self.USE_AWS_SECRETS = os.environ.get("USE_AWS_SECRETS", "").lower() == "true"
         self.AWS_SECRETS_NAME = os.environ.get("AWS_SECRETS_NAME", "")
-        self.S3_BUCKET = os.environ.get("S3_BUCKET", "")
         
         # API Settings
         self.API_KEY = os.environ.get("API_KEY", "")  # Gemini API key
@@ -107,6 +106,8 @@ class Settings:
         self.YATIVO_SECRET_KEY = os.environ.get("YATIVO_SECRET_KEY", "")
         self.YATIVO_BASE_URL = os.environ.get("YATIVO_BASE_URL", "https://sandbox.yativo.com")
         
+        self.S3_EVENTS_BUCKET = os.environ.get("S3_EVENTS_BUCKET", "")
+
         # Load secrets from AWS if enabled
         if self.USE_AWS_SECRETS and self.AWS_SECRETS_NAME:
             self._load_secrets_from_aws()

@@ -75,6 +75,7 @@ async def get_users(
                 "created_at": user.get("created_at"),
                 "last_login": user.get("last_login"),
                 "extractions_count": len(extractions),
+                "status": user.get("status", "active"),
                 "is_admin": is_admin_email(user.get("email", "")) if user.get("email") else False
             })
         
@@ -119,3 +120,28 @@ async def get_stats(
     except Exception as e:
         logger.error(f"Error getting stats: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Failed to get stats: {str(e)}") 
+    
+
+@router.post("/users/{user_id}/disable")
+async def disable_user(
+    user_id: str,
+    current_user: UserDB = Depends(get_admin_user_required)
+):
+    """Disable a user by setting their status to inactive
+    
+    Args:
+        user_id: User ID to disable
+        current_user: Current admin user
+        
+    Returns:
+        Success message
+    """
+    try:
+        print(f"\n\n\n\n\n\nDisabling user {user_id}\n\n\n\n\n\n")
+        # Also disable all their API keys
+        db_adapter.set_inactive_on_user_id(user_id)
+        
+        return {"success": True, "message": f"User {user_id} has been disabled"}
+    except Exception as e:
+        logger.error(f"Error disabling user {user_id}: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to disable user: {str(e)}")

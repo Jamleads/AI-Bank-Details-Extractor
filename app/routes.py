@@ -71,6 +71,20 @@ async def login(request: Request):
     return templates.TemplateResponse("login.html", {"request": request})
 
 
+@router.get("/disabled", response_class=HTMLResponse)
+async def disabled(request: Request):
+    """
+    Render the disabled account page
+    
+    Args:
+        request: FastAPI request
+        
+    Returns:
+        HTML response
+    """
+    return templates.TemplateResponse("disabled.html", {"request": request})
+
+
 @router.get("/admin", response_class=HTMLResponse)
 async def admin(request: Request, current_user: UserDB = Depends(get_current_user_required)):
     """

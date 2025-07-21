@@ -110,7 +110,7 @@ run-aws:
 	DATABASE_TYPE=dynamodb \
 	USE_AWS_SECRETS=true \
 	AWS_SECRETS_NAME=ai-bank \
-	S3_BUCKET=pending-extractions \
+	S3_EVENTS_BUCKET=event-bucket-eventss3bucket-kg2tgn26qcmq \
 	DEBUG=true \
 	USERS_TABLE_NAME=users \
 	HEADER_CONFIGS_TABLE_NAME=header-configs \

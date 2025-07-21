@@ -1,7 +1,7 @@
 """
 Authentication service for Google OAuth
 """
-import os
+import re
 from datetime import datetime, timedelta
 from typing import Optional, Dict, Any
 
@@ -36,7 +36,26 @@ oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token", auto_error=False)
 api_key_routes = [
     "/api/session-status",
     "/api/extract",
+    "/api/header-config/default-headers",
+    "/api/header-config",
+    "/api/header-config/",
+    "/api/user/presigned-urls",
 ]
+
+DYNAMIC_ROUTE_PATTERNS = [
+    r"^/api/header-config/[^/]+$",
+]
+
+def is_api_key_route(path: str) -> bool:
+    """Check if the path is an API key route"""
+    if path in api_key_routes:
+        return True
+
+    for pattern in DYNAMIC_ROUTE_PATTERNS:
+        if re.match(pattern, path):
+            return True
+
+    return False
 
 async def create_user(user_data: UserCreate, db_session: AsyncSession) -> User:
     """
@@ -157,8 +176,7 @@ async def get_user_from_api_key(api_key: str) -> Optional[User]:
     Get user from API key
     """
     api_key = db.get_api_key(api_key)
-
-    if api_key:
+    if api_key and api_key.get("status") == "active":
         user = db.get_user_by_id(api_key.get("user_id"))
         return user
     else:
@@ -184,10 +202,17 @@ async def get_current_user_required(
     Raises:
         HTTPException: If user is not authenticated
     """
+
     if request.headers.get("X-API-KEY"):
-        if request.url.path in api_key_routes:
+        if is_api_key_route(request.url.path):
             user = await get_user_from_api_key(request.headers.get("X-API-KEY"))
             if user:
+                # Check if user is inactive
+                if user.get("status") == "inactive" or getattr(user, "status", None) == "inactive":
+                    raise HTTPException(
+                        status_code=status.HTTP_403_FORBIDDEN,
+                        detail="Your account has been disabled",
+                    )
                 return user
 
     user = await get_current_user(request, token, db_session)
@@ -197,4 +222,12 @@ async def get_current_user_required(
             detail="Not authenticated",
             headers={"WWW-Authenticate": "Bearer"},
         )
+        
+    # Check if user is inactive
+    if user.get("status") == "inactive" or getattr(user, "status", None) == "inactive":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Your account has been disabled",
+        )
+        
     return user

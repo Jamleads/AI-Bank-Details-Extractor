@@ -24,6 +24,7 @@ class UserDB(UserBase):
     google_id: str
     created_at: datetime = Field(default_factory=datetime.now)
     last_login: datetime = Field(default_factory=datetime.now)
+    status: str = "active"  # Default status is active
 
     class Config:
         from_attributes = True
@@ -32,6 +33,7 @@ class UserDB(UserBase):
 class UserResponse(UserBase):
     """User response model"""
     id: Union[int, str]  # Accept either integer or string ID
+    status: str = "active"  # Default status is active
 
     class Config:
         from_attributes = True

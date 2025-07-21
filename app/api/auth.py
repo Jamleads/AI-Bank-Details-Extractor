@@ -63,6 +63,12 @@ async def auth_callback(request: Request, db: AsyncSession = Depends(get_async_d
         
         user = await create_user(user_data, db)
         
+        # Check if user is inactive/disabled
+        user_status = user.get("status") if isinstance(user, dict) else getattr(user, "status", "active")
+        if user_status == "inactive":
+            logger.warning(f"Disabled user attempted login: {user_data.email}")
+            return RedirectResponse(url="/disabled", status_code=status.HTTP_302_FOUND)
+        
         # Create access token - handle both object and dictionary access
         user_email = user["email"] if isinstance(user, dict) else user.email
         

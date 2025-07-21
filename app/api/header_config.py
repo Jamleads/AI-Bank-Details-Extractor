@@ -19,7 +19,7 @@ logger.setLevel(logging.DEBUG)
 router = APIRouter(prefix="/api/header-config", tags=["header-config"])
 
 
-@router.get("/default-headers", description="Get the default headers")
+@router.get("/default-headers", response_model=DefaultHeaders, description="Get the default headers")
 async def get_default_headers():
     """
     Get the default headers
@@ -54,7 +54,7 @@ async def create_config(
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.get("/", response_model=List[HeaderConfigResponse], include_in_schema=False)
+@router.get("/", response_model=List[HeaderConfigResponse])
 async def get_configs(
     db: AsyncSession = Depends(get_async_db),
     current_user: UserDB = Depends(get_current_user_required)
@@ -76,31 +76,8 @@ async def get_configs(
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.get("/default", response_model=HeaderConfigResponse, description="Get the default header configuration for the current user")
-async def get_default_config(
-    db: AsyncSession = Depends(get_async_db),
-    current_user: UserDB = Depends(get_current_user_required)
-):
-    """
-    Get the default header configuration for the current user
-    If none exists, create one with system defaults
-    
-    Args:
-        db: Database session
-        current_user: Current authenticated user
-        
-    Returns:
-        Default header configuration
-    """
-    try:
-        return await ensure_default_config(get_user_id(current_user), db)
-    except Exception as e:
-        logger.error(f"Error getting default header config: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
-
-
 @router.get("/{config_id}", response_model=HeaderConfigResponse, description="Get a header configuration by ID")
-async def get_header_config(
+async def get_header_config_by_id(
     config_id: Union[int, str],
     db: AsyncSession = Depends(get_async_db),
     current_user: UserDB = Depends(get_current_user_required)
