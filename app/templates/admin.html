@@ -139,6 +139,113 @@
         cursor: not-allowed;
     }
 
+    /* Ad management styles */
+    .admin-section {
+        margin-top: 40px;
+        background-color: #fff;
+        border-radius: 8px;
+        box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        padding: 20px;
+    }
+
+    .admin-section h2 {
+        margin-top: 0;
+        margin-bottom: 20px;
+        color: #333;
+    }
+
+    .ad-form {
+        display: flex;
+        flex-direction: column;
+        gap: 15px;
+        max-width: 600px;
+    }
+
+    .form-group {
+        display: flex;
+        flex-direction: column;
+        gap: 5px;
+    }
+
+    .form-group label {
+        font-weight: 500;
+        color: #333;
+    }
+
+    .form-group input[type="text"],
+    .form-group textarea {
+        padding: 10px;
+        border: 1px solid #ddd;
+        border-radius: 4px;
+        font-size: 14px;
+    }
+
+    .form-group textarea {
+        min-height: 80px;
+        resize: vertical;
+    }
+
+    .btn-primary {
+        background-color: #2196F3;
+        color: white;
+        border: none;
+        padding: 10px 15px;
+        border-radius: 4px;
+        cursor: pointer;
+        font-size: 14px;
+        font-weight: 500;
+        max-width: 200px;
+    }
+
+    .btn-primary:hover {
+        background-color: #1976D2;
+    }
+
+    .btn-primary:disabled {
+        background-color: #bdbdbd;
+        cursor: not-allowed;
+    }
+
+    .preview-container {
+        margin-top: 20px;
+        display: none;
+    }
+
+    .preview-container.active {
+        display: block;
+    }
+
+    .preview-image {
+        max-width: 100%;
+        max-height: 200px;
+        border-radius: 4px;
+        border: 1px solid #ddd;
+    }
+
+    .preview-text {
+        margin-top: 10px;
+        font-style: italic;
+        color: #666;
+    }
+
+    .success-message {
+        margin-top: 15px;
+        padding: 10px;
+        background-color: #e8f5e9;
+        border-left: 4px solid #4caf50;
+        color: #1b5e20;
+        display: none;
+    }
+
+    .error-message {
+        margin-top: 15px;
+        padding: 10px;
+        background-color: #ffebee;
+        border-left: 4px solid #f44336;
+        color: #b71c1c;
+        display: none;
+    }
+
     @keyframes spin {
         0% {
             transform: rotate(0deg);
@@ -193,6 +300,33 @@
             </tbody>
         </table>
     </div>
+
+    <!-- Ad Management Section -->
+    <div class="admin-section">
+        <h2>Advertisement Management</h2>
+        <p>Upload advertisements to be displayed to users.</p>
+
+        <form id="ad-form" class="ad-form" enctype="multipart/form-data">
+            <div class="form-group">
+                <label for="ad-image">Advertisement Image</label>
+                <input type="file" id="ad-image" name="image" accept="image/*" required>
+            </div>
+            <div class="form-group">
+                <label for="ad-text">Advertisement Text</label>
+                <textarea id="ad-text" name="ad_text" placeholder="Enter advertisement text" required></textarea>
+            </div>
+            <button type="submit" class="btn-primary" id="upload-ad-btn">Upload Advertisement</button>
+        </form>
+
+        <div class="preview-container" id="preview-container">
+            <h3>Preview</h3>
+            <img src="" alt="Advertisement Preview" class="preview-image" id="preview-image">
+            <p class="preview-text" id="preview-text"></p>
+        </div>
+
+        <div class="success-message" id="ad-success-message"></div>
+        <div class="error-message" id="ad-error-message"></div>
+    </div>
 </div>
 {% endblock %}
 
@@ -225,6 +359,7 @@
                 }
                 // Load admin data
                 loadAdminData();
+                setupAdForm();
             })
             .catch(error => {
                 console.error('Error checking admin status:', error);
@@ -340,6 +475,86 @@
                 });
 
                 populateUsersTable(filteredUsers);
+            });
+        }
+
+        function setupAdForm() {
+            const adForm = document.getElementById('ad-form');
+            const adImage = document.getElementById('ad-image');
+            const adText = document.getElementById('ad-text');
+            const previewContainer = document.getElementById('preview-container');
+            const previewImage = document.getElementById('preview-image');
+            const previewText = document.getElementById('preview-text');
+            const successMessage = document.getElementById('ad-success-message');
+            const errorMessage = document.getElementById('ad-error-message');
+
+            // Show preview when image is selected
+            adImage.addEventListener('change', function () {
+                const file = this.files[0];
+                if (file) {
+                    const reader = new FileReader();
+                    reader.onload = function (e) {
+                        previewImage.src = e.target.result;
+                        previewContainer.classList.add('active');
+                    };
+                    reader.readAsDataURL(file);
+                }
+            });
+
+            // Update preview text when text changes
+            adText.addEventListener('input', function () {
+                previewText.textContent = this.value;
+            });
+
+            // Handle form submission
+            adForm.addEventListener('submit', function (e) {
+                e.preventDefault();
+
+                // Hide previous messages
+                successMessage.style.display = 'none';
+                errorMessage.style.display = 'none';
+
+                const formData = new FormData();
+                formData.append('image', adImage.files[0]);
+                formData.append('ad_text', adText.value);
+
+                // Disable submit button
+                const submitBtn = document.getElementById('upload-ad-btn');
+                submitBtn.disabled = true;
+                submitBtn.textContent = 'Uploading...';
+
+                fetch('/api/ads/upload', {
+                    method: 'POST',
+                    body: formData,
+                    headers: {
+                        'Authorization': `Bearer ${token}`
+                    }
+                })
+                    .then(response => {
+                        if (!response.ok) {
+                            throw new Error(`Error: ${response.status}`);
+                        }
+                        return response.json();
+                    })
+                    .then(data => {
+                        // Show success message
+                        successMessage.textContent = 'Advertisement uploaded successfully!';
+                        successMessage.style.display = 'block';
+
+                        // Reset form
+                        adForm.reset();
+                        previewContainer.classList.remove('active');
+                    })
+                    .catch(error => {
+                        console.error('Error uploading advertisement:', error);
+                        errorMessage.textContent = `Failed to upload advertisement: ${error.message}`;
+                        errorMessage.style.display = 'block';
+                    })
+                    .finally(() => {
+                        // Re-enable submit button
+                        submitBtn.disabled = false;
+                        submitBtn.textContent = 'Upload Advertisement';
+                    });
             });
         }
     });

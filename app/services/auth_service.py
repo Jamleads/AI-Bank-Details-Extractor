@@ -44,8 +44,6 @@ api_key_routes = [
 
 DYNAMIC_ROUTE_PATTERNS = [
     r"^/api/header-config/[^/]+$",
-    r"^/api/admin/users/[^/]+/disable$",
-    r"^/api/admin/stats$"
 ]
 
 def is_api_key_route(path: str) -> bool:

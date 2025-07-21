@@ -47,6 +47,31 @@
         border-left: 4px solid #FFC107;
         color: #ff6f00;
     }
+
+    /* Ad banner styles */
+    .ad-banner {
+        margin: 20px 0;
+        padding: 15px;
+        background-color: #f8f9fa;
+        border-radius: 8px;
+        border: 1px solid #e9ecef;
+        display: flex;
+        align-items: center;
+        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+    }
+
+    .ad-banner-image {
+        max-width: 200px;
+        max-height: 100px;
+        margin-right: 15px;
+        border-radius: 4px;
+    }
+
+    .ad-banner-text {
+        flex: 1;
+        font-size: 14px;
+        color: #495057;
+    }
 </style>
 {% endblock %}
 
@@ -61,6 +86,12 @@
         <p class="subscription-info">
             Your subscription: <span class="subscription-tier">{{ current_user.subscription_tier }}</span>
         </p>
+
+        <!-- Advertisement Banner -->
+        <div class="ad-banner" id="ad-banner" style="display: none;">
+            <img src="" alt="Advertisement" class="ad-banner-image" id="ad-banner-image">
+            <div class="ad-banner-text" id="ad-banner-text"></div>
+        </div>
     </div>
 
     <!-- Add status message container -->
@@ -177,7 +208,45 @@
                 console.log('Auth token saved from meta tag');
             }
         }
+
+        // Load the latest ad
+        loadLatestAd();
     });
+
+    // Function to load the latest advertisement
+    function loadLatestAd() {
+        const authToken = localStorage.getItem('auth_token');
+        if (!authToken) return;
+
+        fetch('/api/ads/latest', {
+            headers: {
+                'Authorization': `Bearer ${authToken}`
+            }
+        })
+            .then(response => {
+                if (!response.ok) {
+                    if (response.status !== 404) {
+                        console.error('Error loading advertisement:', response.status);
+                    }
+                    return null;
+                }
+                return response.json();
+            })
+            .then(ad => {
+                if (ad) {
+                    const adBanner = document.getElementById('ad-banner');
+                    const adImage = document.getElementById('ad-banner-image');
+                    const adText = document.getElementById('ad-banner-text');
+
+                    adImage.src = ad.url;
+                    adText.textContent = ad.ad_text;
+                    adBanner.style.display = 'flex';
+                }
+            })
+            .catch(error => {
+                console.error('Error loading advertisement:', error);
+            });
+    }
 
     document.addEventListener('DOMContentLoaded', function () {
         // Get auth token
