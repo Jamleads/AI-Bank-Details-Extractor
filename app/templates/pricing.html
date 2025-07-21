@@ -1,0 +1,25 @@
+{% extends "base.html" %}
+
+{% block title %}Pricing - Bank Details Extractor{% endblock %}
+
+{% block extra_css %}
+<link rel="stylesheet" href="{{ url_for('static', path='css/payment.css') }}">
+{% endblock %}
+
+{% block content %}
+<div class="page-container">
+    <div class="page-header">
+        <h1>Choose Your Plan</h1>
+        <p>Select the plan that best fits your needs</p>
+    </div>
+
+    <div id="pricing-container" class="pricing-container">
+        <!-- Pricing cards will be dynamically generated here -->
+        <div class="loading-message">Loading pricing information...</div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script src="{{ url_for('static', path='js/payment.js') }}"></script>
+{% endblock %}

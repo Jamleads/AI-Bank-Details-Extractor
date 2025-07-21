@@ -1,0 +1,789 @@
+{% extends "base.html" %}
+
+{% block title %}Bank Details Extractor{% endblock %}
+
+{% block extra_css %}
+<style>
+    .header-config-section {
+        margin-top: 15px;
+        margin-bottom: 15px;
+        padding: 10px;
+        background-color: #f8f9fa;
+        border-radius: 5px;
+    }
+
+    .header-config-section label {
+        font-weight: 600;
+        margin-bottom: 5px;
+    }
+
+    .status-message {
+        margin: 15px 0;
+        padding: 12px 15px;
+        border-radius: 5px;
+        display: none;
+    }
+
+    .status-message.info {
+        background-color: #e3f2fd;
+        border-left: 4px solid #2196F3;
+        color: #0d47a1;
+    }
+
+    .status-message.success {
+        background-color: #e8f5e9;
+        border-left: 4px solid #4CAF50;
+        color: #1b5e20;
+    }
+
+    .status-message.error {
+        background-color: #ffebee;
+        border-left: 4px solid #F44336;
+        color: #b71c1c;
+    }
+
+    .status-message.warning {
+        background-color: #fff8e1;
+        border-left: 4px solid #FFC107;
+        color: #ff6f00;
+    }
+
+    /* Ad banner styles */
+    .ad-banner {
+        margin: 20px 0;
+        padding: 15px;
+        background-color: #f8f9fa;
+        border-radius: 8px;
+        border: 1px solid #e9ecef;
+        display: flex;
+        align-items: center;
+        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+    }
+
+    .ad-banner-image {
+        max-width: 200px;
+        max-height: 100px;
+        margin-right: 15px;
+        border-radius: 4px;
+    }
+
+    .ad-banner-text {
+        flex: 1;
+        font-size: 14px;
+        color: #495057;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+{% if auth_token %}
+<meta name="x-auth-token" content="{{ auth_token }}">
+{% endif %}
+
+<div class="dashboard">
+    <div class="welcome-section">
+        <h1>Welcome, {{ current_user.name }}!</h1>
+        <p class="subscription-info">
+            Your subscription: <span class="subscription-tier">{{ current_user.subscription_tier }}</span>
+        </p>
+
+        <!-- Advertisement Banner -->
+        <div class="ad-banner" id="ad-banner" style="display: none;">
+            <img src="" alt="Advertisement" class="ad-banner-image" id="ad-banner-image">
+            <div class="ad-banner-text" id="ad-banner-text"></div>
+        </div>
+    </div>
+
+    <!-- Add status message container -->
+    <div id="status-message" class="status-message"></div>
+
+    <div class="upload-section">
+        <div class="section-header">
+            <h2>Upload Files</h2>
+            <p>Upload files containing bank details</p>
+        </div>
+
+        <form id="uploadForm" enctype="multipart/form-data">
+            <div class="upload-area" id="uploadArea">
+                <i class="fas fa-cloud-upload-alt upload-icon"></i>
+                <div class="upload-message">Drop files here or click to upload</div>
+                <div class="upload-instructions">Accepted file types: PDF, PNG, JPG, JPEG, WebP, ZIP (Max size: 10MB)
+                </div>
+                <input type="file" id="fileInput" name="file" multiple accept=".pdf,.png,.jpg,.jpeg,.webp,.zip"
+                    class="file-input">
+            </div>
+            <div id="fileList" class="file-list"></div>
+            <div class="header-config-section">
+                <div class="form-group">
+                    <label for="upload-header-config">Header Configuration:</label>
+                    <select id="upload-header-config" class="form-control">
+                        <option value="">Default</option>
+                        <!-- Header configs will be populated dynamically -->
+                    </select>
+                </div>
+            </div>
+            <div class="upload-controls">
+                <button type="button" id="processBtn" class="btn btn-primary" disabled>Process Files</button>
+                <button type="button" id="clear-button" class="btn btn-secondary" disabled>Clear All Data</button>
+            </div>
+        </form>
+    </div>
+
+    <div class="results-section">
+        <div class="section-header">
+            <h2>Results</h2>
+            <p>Extracted bank details will appear here</p>
+        </div>
+
+        <div class="results-container">
+            <div class="results-placeholder" id="resultsPlaceholder">
+                <i class="fas fa-file-invoice"></i>
+                <p>Upload and process files to see results</p>
+            </div>
+
+            <div class="results-table-container" id="resultsTableContainer" style="display: none;">
+                <table class="results-table" id="resultsTable">
+                    <thead>
+                        <tr>
+                            <th>File</th>
+                            <th>Bank Name</th>
+                            <th>Account Name</th>
+                            <th>Account Number</th>
+                            <th>Sort Code</th>
+                            <th>IBAN</th>
+                            <th>SWIFT/BIC</th>
+                            <th>Routing Number</th>
+                            <th>BSB Code</th>
+                        </tr>
+                    </thead>
+                    <tbody id="resultsTableBody">
+                        <!-- Results will be populated here -->
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <div class="export-section" id="exportSection" style="display: none;">
+            <h3>Export Options</h3>
+            <div class="export-options">
+                <div class="form-group">
+                    <label for="export-format">Format:</label>
+                    <select id="export-format" class="form-control">
+                        <option value="csv">CSV</option>
+                        <option value="json">JSON</option>
+                        <option value="xlsx">Excel</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label for="header-config-dropdown">Header Configuration:</label>
+                    <select id="header-config-dropdown" class="form-control">
+                        <option value="">Default</option>
+                        <!-- Header configs will be populated dynamically -->
+                    </select>
+                </div>
+            </div>
+            <div class="export-buttons">
+                <button id="exportCsvBtn" class="btn btn-export">
+                    <i class="fas fa-file-csv"></i> Download
+                </button>
+                <button id="exportDriveBtn" class="btn btn-export">
+                    <i class="fab fa-google-drive"></i> Export to Google Drive
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script src="{{ url_for('static', path='js/main.js') }}"></script>
+<script>
+    // Check for auth token in meta tag
+    document.addEventListener('DOMContentLoaded', function () {
+        const authTokenMeta = document.querySelector('meta[name="x-auth-token"]');
+        if (authTokenMeta) {
+            const authToken = authTokenMeta.getAttribute('content');
+            if (authToken) {
+                localStorage.setItem('auth_token', authToken);
+                console.log('Auth token saved from meta tag');
+            }
+        }
+
+        // Load the latest ad
+        loadLatestAd();
+    });
+
+    // Function to load the latest advertisement
+    function loadLatestAd() {
+        const authToken = localStorage.getItem('auth_token');
+        if (!authToken) return;
+
+        fetch('/api/ads/latest', {
+            headers: {
+                'Authorization': `Bearer ${authToken}`
+            }
+        })
+            .then(response => {
+                if (!response.ok) {
+                    if (response.status !== 404) {
+                        console.error('Error loading advertisement:', response.status);
+                    }
+                    return null;
+                }
+                return response.json();
+            })
+            .then(ad => {
+                if (ad) {
+                    const adBanner = document.getElementById('ad-banner');
+                    const adImage = document.getElementById('ad-banner-image');
+                    const adText = document.getElementById('ad-banner-text');
+
+                    adImage.src = ad.url;
+                    adText.textContent = ad.ad_text;
+                    adBanner.style.display = 'flex';
+                }
+            })
+            .catch(error => {
+                console.error('Error loading advertisement:', error);
+            });
+    }
+
+    document.addEventListener('DOMContentLoaded', function () {
+        // Get auth token
+        const authToken = localStorage.getItem('auth_token') || "{{ auth_token }}";
+
+        // File input handling
+        const fileInput = document.getElementById('fileInput');
+        const uploadArea = document.getElementById('uploadArea');
+        const fileList = document.getElementById('fileList');
+        const processBtn = document.getElementById('processBtn');
+        let clearBtn = document.getElementById('clear-button'); // Initialize clearBtn
+        let uploadedFiles = [];
+
+        // Make sure clear button is enabled
+        if (clearBtn) clearBtn.disabled = false;
+
+        // Simple clear button implementation - no cloning to avoid recursion issues
+        let clearButtonClicked = false; // Flag to prevent multiple clicks
+        clearBtn.addEventListener('click', function (e) {
+            // Prevent default behavior
+            e.preventDefault();
+
+            // Prevent multiple clicks
+            if (clearButtonClicked) return;
+
+            if (confirm('Are you sure you want to clear all data? This will remove all uploaded files and extracted data.')) {
+                // Set flag to prevent multiple clicks
+                clearButtonClicked = true;
+
+                // Show loading state
+                clearBtn.disabled = true;
+                clearBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Clearing...';
+
+                // Clear UI elements first
+                fileInput.value = '';
+                uploadedFiles = [];
+                fileList.innerHTML = '';
+                updateButtonStates();
+                hideResults();
+
+                // Call API to clear session data
+                fetch('/api/clear-session', {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${authToken}`
+                    }
+                })
+                    .then(response => {
+                        if (!response.ok) {
+                            return response.json().then(data => {
+                                throw new Error(data.detail || `Error: ${response.status}`);
+                            });
+                        }
+                        return response.json();
+                    })
+                    .then(() => {
+                        alert('All data has been cleared successfully');
+                    })
+                    .catch(error => {
+                        console.error('Error clearing data:', error);
+                        alert(`Failed to clear data: ${error.message}`);
+                    })
+                    .finally(() => {
+                        // Reset button state
+                        clearBtn.innerHTML = 'Clear All Data';
+                        clearBtn.disabled = false;
+                        clearButtonClicked = false;
+                    });
+            }
+        });
+
+        // Handle drag and drop events
+        ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
+            uploadArea.addEventListener(eventName, preventDefaults, false);
+        });
+
+        function preventDefaults(e) {
+            e.preventDefault();
+            e.stopPropagation();
+        }
+
+        ['dragenter', 'dragover'].forEach(eventName => {
+            uploadArea.addEventListener(eventName, highlight, false);
+        });
+
+        ['dragleave', 'drop'].forEach(eventName => {
+            uploadArea.addEventListener(eventName, unhighlight, false);
+        });
+
+        function highlight() {
+            uploadArea.classList.add('highlight');
+        }
+
+        function unhighlight() {
+            uploadArea.classList.remove('highlight');
+        }
+
+        // Handle file drop
+        uploadArea.addEventListener('drop', handleDrop, false);
+
+        function handleDrop(e) {
+            const dt = e.dataTransfer;
+            const files = dt.files;
+            fileInput.files = files;
+            handleFiles(files);
+        }
+
+        // Handle file selection via input
+        fileInput.addEventListener('change', function () {
+            handleFiles(this.files);
+        });
+
+        function handleFiles(files) {
+            if (files.length === 0) return;
+
+            // Filter for supported file types
+            const allowedTypes = [
+                'application/pdf',
+                'image/png',
+                'image/jpeg',
+                'image/webp',
+                'application/zip'
+            ];
+            const allowedExtensions = ['.pdf', '.png', '.jpg', '.jpeg', '.webp', '.zip'];
+
+            // Separate valid and invalid files
+            const validFiles = [];
+            const invalidFiles = [];
+
+            Array.from(files).forEach(file => {
+                const fileExtension = '.' + file.name.split('.').pop().toLowerCase();
+                if (allowedTypes.includes(file.type) || allowedExtensions.includes(fileExtension)) {
+                    validFiles.push(file);
+                } else {
+                    invalidFiles.push(file);
+                }
+            });
+
+            // Show message if there are invalid files
+            if (invalidFiles.length > 0) {
+                const invalidFileNames = invalidFiles.map(f => f.name).join(', ');
+                alert(`Unsupported file type(s): ${invalidFileNames}. Only PDF, PNG, JPG, JPEG, WebP, and ZIP files are supported.`);
+            }
+
+            if (validFiles.length === 0) {
+                return;
+            }
+
+            uploadedFiles = [...uploadedFiles, ...validFiles];
+            updateFileList();
+            updateButtonStates();
+        }
+
+        function updateFileList() {
+            fileList.innerHTML = '';
+
+            uploadedFiles.forEach((file, index) => {
+                const fileItem = document.createElement('div');
+                fileItem.className = 'file-item';
+
+                const fileExtension = '.' + file.name.split('.').pop().toLowerCase();
+                const fileIcon = file.type === 'application/pdf' || fileExtension === '.pdf' ? 'fa-file-pdf' :
+                    file.type === 'image/png' || fileExtension === '.png' ? 'fa-file-image' :
+                        file.type === 'image/jpeg' || fileExtension === '.jpg' || fileExtension === '.jpeg' ? 'fa-file-image' :
+                            file.type === 'image/webp' || fileExtension === '.webp' ? 'fa-file-image' :
+                                file.type === 'application/zip' || fileExtension === '.zip' ? 'fa-file-archive' : 'fa-file';
+
+                const fileName = document.createElement('div');
+                fileName.className = 'file-name';
+                fileName.innerHTML = `<i class="fas ${fileIcon}"></i> ${file.name}`;
+
+                const removeBtn = document.createElement('button');
+                removeBtn.className = 'remove-file';
+                removeBtn.innerHTML = '<i class="fas fa-times"></i>';
+                removeBtn.onclick = function () {
+                    uploadedFiles.splice(index, 1);
+                    updateFileList();
+                    updateButtonStates();
+                };
+
+                fileItem.appendChild(fileName);
+                fileItem.appendChild(removeBtn);
+                fileList.appendChild(fileItem);
+            });
+        }
+
+        // Process button
+        // NOTE: This event listener is now handled in main.js to avoid duplicate calls
+        // processBtn.addEventListener('click', function () {
+        //     if (uploadedFiles.length === 0) return;
+
+        //     // Disable the button during processing
+        //     processBtn.disabled = true;
+        //     processBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Processing...';
+
+        //     // Create FormData and append files
+        //     const formData = new FormData();
+        //     uploadedFiles.forEach(file => {
+        //         formData.append('files', file);
+        //     });
+
+        //     // Add header configuration if selected
+        //     const headerConfigId = document.getElementById('upload-header-config').value;
+        //     if (headerConfigId) {
+        //         formData.append('header_config_id', headerConfigId);
+        //     }
+
+        //     // Process files directly with extract endpoint
+        //     fetch('/api/extract', {
+        //         method: 'POST',
+        //         headers: {
+        //             'Authorization': `Bearer ${authToken}`
+        //         },
+        //         body: formData
+        //     })
+        //         .then(response => {
+        //             if (!response.ok) {
+        //                 return response.json().then(data => {
+        //                     throw new Error(data.detail || `Error: ${response.status}`);
+        //                 });
+        //             }
+        //             return response.json();
+        //         })
+        //         .then(data => {
+        //             // Check for errors
+        //             if (data.errors && data.errors.length > 0) {
+        //                 const errorMessages = data.errors.map(err =>
+        //                     `${err.filename}: ${err.error}`
+        //                 ).join('\n');
+
+        //                 if (data.results && data.results.length > 0) {
+        //                     alert(`Processed ${data.results.length} files with some errors:\n${errorMessages}`);
+        //                 } else {
+        //                     throw new Error(`Failed to process files:\n${errorMessages}`);
+        //                 }
+        //             } else {
+        //                 alert(`Successfully processed ${data.results ? data.results.length : 0} files.`);
+        //             }
+
+        //             // Clear selected files after successful upload
+        //             uploadedFiles = [];
+        //             updateFileList();
+        //             updateButtonStates();
+
+        //             // Display results
+        //             displayResults(data.results || []);
+        //         })
+        //         .catch(error => {
+        //             console.error('Error:', error);
+        //             alert(`Error processing files: ${error.message}`);
+        //         })
+        //         .finally(() => {
+        //             processBtn.disabled = false;
+        //             processBtn.innerHTML = 'Process Files';
+        //         });
+        // });
+
+        // Clear button - clears all data including previously processed files
+        // This event listener is being removed as it conflicts with the one in main.js
+        // clearBtn.addEventListener('click', function () {
+        //     if (confirm('Are you sure you want to clear all data? This will remove all uploaded files and extracted data.')) {
+        //         // Clear current files
+        //         fileInput.value = '';
+        //         uploadedFiles = [];
+        //         fileList.innerHTML = '';
+        //         updateButtonStates();
+
+        //         // Call API to clear session data
+        //         fetch('/api/clear-session', {
+        //             method: 'POST',
+        //             headers: {
+        //                 'Authorization': `Bearer ${authToken}`
+        //             }
+        //         })
+        //             .then(response => {
+        //                 if (!response.ok) {
+        //                     return response.json().then(data => {
+        //                         throw new Error(data.detail || `Error: ${response.status}`);
+        //                     });
+        //                 }
+        //                 return response.json();
+        //             })
+        //             .then(() => {
+        //                 alert('All data has been cleared successfully');
+        //                 hideResults();
+        //             })
+        //             .catch(error => {
+        //                 console.error('Error clearing data:', error);
+        //                 alert(`Failed to clear data: ${error.message}`);
+        //             });
+        //     }
+        // });
+
+        // Export buttons
+        document.getElementById('exportCsvBtn').addEventListener('click', function () {
+            const format = document.getElementById('export-format').value;
+            const headerConfigId = document.getElementById('header-config-dropdown').value;
+
+            let url = `/api/export/${format}?token=${authToken}`;
+            // Default to structured data (not raw)
+            if (headerConfigId) url += `&config_id=${headerConfigId}`;
+
+            window.location.href = url;
+        });
+
+        document.getElementById('exportDriveBtn').addEventListener('click', function () {
+            const format = document.getElementById('export-format').value;
+            const headerConfigId = document.getElementById('header-config-dropdown').value;
+
+            // Generate filename with timestamp
+            const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+            const fileName = `bank_details_${timestamp}.${format}`;
+
+            fetch('/drive/export', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${authToken}`
+                },
+                body: JSON.stringify({
+                    file_name: fileName,
+                    format: format,
+                    config_id: headerConfigId || undefined
+                })
+            })
+                .then(response => {
+                    if (!response.ok) {
+                        // Check if it's an authorization error
+                        if (response.status === 401) {
+                            return response.json().then(data => {
+                                if (data.detail === "Google Drive authorization required") {
+                                    // Redirect to authorization URL
+                                    window.location.href = '/drive/auth';
+                                    throw new Error('Redirecting to Google Drive authorization...');
+                                }
+                                throw new Error(data.detail || `Error: ${response.status}`);
+                            });
+                        }
+                        return response.json().then(data => {
+                            throw new Error(data.detail || `Error: ${response.status}`);
+                        });
+                    }
+                    return response.json();
+                })
+                .then(result => {
+                    // Add some CSS for the drive link styling
+                    const style = document.createElement('style');
+                    style.textContent = `
+                        .drive-link-container {
+                            margin-top: 10px;
+                            padding: 10px;
+                            background-color: #f8f9fa;
+                            border-radius: 5px;
+                            border-left: 4px solid #4285F4;
+                        }
+                        .drive-link-button {
+                            display: inline-block;
+                            margin-top: 5px;
+                            padding: 8px 16px;
+                            background-color: #4285F4;
+                            color: white !important;
+                            border-radius: 4px;
+                            text-decoration: none;
+                            font-weight: bold;
+                            transition: background-color 0.3s;
+                        }
+                        .drive-link-button:hover {
+                            background-color: #3367D6;
+                            text-decoration: none;
+                        }
+                    `;
+                    document.head.appendChild(style);
+
+                    // Show success message with styled link
+                    const successMessage = `
+                        <div class="success-message">
+                            <p><i class="fas fa-check-circle"></i> Successfully exported to Google Drive!</p>
+                            <div class="drive-link-container">
+                                <p>File: <strong>${fileName}</strong></p>
+                                <a href="${result.link}" target="_blank" class="drive-link-button">
+                                    <i class="fab fa-google-drive"></i> View File in Google Drive
+                                </a>
+                            </div>
+                        </div>
+                    `;
+
+                    alert('Successfully exported to Google Drive!');
+
+                    // Display the success message in a more visible way
+                    const statusMessage = document.getElementById('status-message');
+                    if (statusMessage) {
+                        statusMessage.innerHTML = successMessage;
+                        statusMessage.className = 'status-message success';
+                        statusMessage.style.display = 'block';
+                    }
+
+                    // Open the file in a new tab
+                    if (result.link) {
+                        window.open(result.link, '_blank');
+                    }
+                })
+                .catch(error => {
+                    if (!error.message.includes('Redirecting')) {
+                        console.error('Error exporting to Google Drive:', error);
+                        alert(`Error exporting to Google Drive: ${error.message}`);
+                    }
+                });
+        });
+
+        // Helper functions
+        function updateButtonStates() {
+            processBtn.disabled = uploadedFiles.length === 0;
+            // Don't disable clear button as it should be available to clear previous results
+        }
+
+        function displayResults(data) {
+            const resultsPlaceholder = document.getElementById('resultsPlaceholder');
+            const resultsTableContainer = document.getElementById('resultsTableContainer');
+            const resultsTableBody = document.getElementById('resultsTableBody');
+            const exportSection = document.getElementById('exportSection');
+
+            // Clear previous results
+            resultsTableBody.innerHTML = '';
+
+            if (!data || data.length === 0) {
+                resultsPlaceholder.style.display = 'flex';
+                resultsTableContainer.style.display = 'none';
+                exportSection.style.display = 'none';
+                return;
+            }
+
+            // Add rows for each result
+            data.forEach(item => {
+                const row = document.createElement('tr');
+                row.innerHTML = `
+                    <td>${item.source_pdf || '-'}</td>
+                    <td>${item.bank_name || '-'}</td>
+                    <td>${item.account_name || '-'}</td>
+                    <td>${item.account_number || '-'}</td>
+                    <td>${item.sort_code || '-'}</td>
+                    <td>${item.iban || '-'}</td>
+                    <td>${item.swift_code || '-'}</td>
+                    <td>${item.routing_number || '-'}</td>
+                    <td>${item.bsb_code || '-'}</td>
+                `;
+                resultsTableBody.appendChild(row);
+            });
+
+            // Show results and export options
+            resultsPlaceholder.style.display = 'none';
+            resultsTableContainer.style.display = 'block';
+            exportSection.style.display = 'block';
+
+            // Load header configurations
+            loadHeaderConfigurations();
+        }
+
+        function loadHeaderConfigurations() {
+            // Load header configurations from API
+            fetch('/api/header-config', {
+                headers: {
+                    'Authorization': `Bearer ${authToken}`
+                }
+            })
+                .then(response => {
+                    if (!response.ok) {
+                        throw new Error(`Error: ${response.status}`);
+                    }
+                    return response.json();
+                })
+                .then(configs => {
+                    // Update export dropdown
+                    const exportDropdown = document.getElementById('header-config-dropdown');
+                    // Clear existing options except the default
+                    while (exportDropdown.options.length > 1) {
+                        exportDropdown.remove(1);
+                    }
+
+                    // Update upload dropdown
+                    const uploadDropdown = document.getElementById('upload-header-config');
+                    // Clear existing options except the default
+                    while (uploadDropdown.options.length > 1) {
+                        uploadDropdown.remove(1);
+                    }
+
+                    // Add options for each config to both dropdowns
+                    configs.forEach(config => {
+                        // For export dropdown
+                        const exportOption = document.createElement('option');
+                        exportOption.value = config.id;
+                        exportOption.textContent = config.name;
+                        if (config.is_default) {
+                            exportOption.textContent += ' (Default)';
+                        }
+                        exportDropdown.appendChild(exportOption);
+
+                        // For upload dropdown
+                        const uploadOption = document.createElement('option');
+                        uploadOption.value = config.id;
+                        uploadOption.textContent = config.name;
+                        if (config.is_default) {
+                            uploadOption.textContent += ' (Default)';
+                        }
+                        uploadDropdown.appendChild(uploadOption);
+                    });
+                })
+                .catch(error => {
+                    console.error('Error loading header configurations:', error);
+                });
+        }
+
+        function hideResults() {
+            document.getElementById('resultsPlaceholder').style.display = 'flex';
+            document.getElementById('resultsTableContainer').style.display = 'none';
+            document.getElementById('exportSection').style.display = 'none';
+        }
+
+        // Check for existing results when page loads
+        fetch('/api/session-status', {
+            headers: {
+                'Authorization': `Bearer ${authToken}`
+            }
+        })
+            .then(response => {
+                if (!response.ok) {
+                    throw new Error(`Error: ${response.status}`);
+                }
+                return response.json();
+            })
+            .then(status => {
+                if (status.results && status.results.length > 0) {
+                    displayResults(status.results);
+                }
+            })
+            .catch(error => {
+                console.error('Error checking session status:', error);
+            });
+    });
+</script>
+{% endblock %}

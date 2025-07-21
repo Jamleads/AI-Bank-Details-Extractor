@@ -1,0 +1,45 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: Storage S3
+
+Parameters:
+  StorageName:
+    Type: String
+    Description: Storage name
+    Default: event-bucket
+
+  AccelerationStatus:
+    Type: String
+    Description: Enable S3 Acceleration
+    Default: Suspended
+    AllowedValues:
+      - Enabled
+      - Suspended
+
+Resources:
+  EventsS3Bucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      AccelerateConfiguration:
+        AccelerationStatus: !Ref AccelerationStatus
+      LifecycleConfiguration:
+        Rules:
+          - Id: AutoDeleteAfterOneDay
+            Status: Enabled
+            ExpirationInDays: 1
+            Prefix: ""  # Applies to all objects
+            AbortIncompleteMultipartUpload:
+              DaysAfterInitiation: 1
+
+Outputs:
+  EventsBucket:
+    Value: !Ref EventsS3Bucket
+    Export:
+      Name: !Sub ${StorageName}-bucket
+  EventsBucketArn:
+    Value: !GetAtt EventsS3Bucket.Arn
+    Export:
+      Name: !Sub ${StorageName}-bucket-arn
