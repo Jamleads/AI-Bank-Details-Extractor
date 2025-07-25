@@ -277,6 +277,10 @@ function setupFileUpload() {
     uploadButton.addEventListener('click', function (e) {
         e.preventDefault();
         if (selectedFiles.length > 0) {
+            // Disable button and show loading state
+            this.disabled = true;
+            this.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Processing...';
+
             uploadFiles(selectedFiles);
         }
     });
@@ -543,6 +547,9 @@ async function uploadFiles(files) {
     showProgressBar(true);
     showStatusMessage('Uploading and processing files...', 'info');
 
+    // Get reference to upload button
+    const uploadButton = document.getElementById('processBtn');
+
     try {
         const formData = new FormData();
         files.forEach(file => {
@@ -600,6 +607,12 @@ async function uploadFiles(files) {
         showStatusMessage(`Error: ${error.message}`, 'error');
     } finally {
         showProgressBar(false);
+
+        // Reset button state
+        if (uploadButton) {
+            uploadButton.disabled = true; // Keep disabled as clearSelectedFiles() was called
+            uploadButton.innerHTML = 'Process Files';
+        }
     }
 }
 
@@ -674,51 +687,185 @@ async function updateSessionStatus() {
 
 function updateExtractionResults() {
     const extractionResults = document.getElementById('extraction-results');
+    const resultsPlaceholder = document.getElementById('resultsPlaceholder');
+    const resultsTableContainer = document.getElementById('resultsTableContainer');
+
     if (!extractionResults) return;
 
     if (structuredRecords.length === 0 && rawExtractions.length === 0) {
-        extractionResults.innerHTML = '<div class="no-results">No extraction results available</div>';
+        // Show placeholder when no results
+        if (resultsPlaceholder) resultsPlaceholder.style.display = 'flex';
+        if (resultsTableContainer) resultsTableContainer.style.display = 'none';
         return;
     }
 
-    let html = '';
+    // Hide placeholder, show results
+    if (resultsPlaceholder) resultsPlaceholder.style.display = 'none';
+    if (resultsTableContainer) resultsTableContainer.style.display = 'block';
 
     // Use structured records if available, otherwise use raw extractions
     const records = structuredRecords.length > 0 ? structuredRecords : rawExtractions;
 
-    records.slice(0, 5).forEach(record => {
-        html += `
-            <div class="result-item">
-                <div class="result-header">
-                    <div class="result-title">${record.bank_name || 'Unknown Bank'}</div>
+    // Get unique file names (limit to 5)
+    const uniqueFileNames = [...new Set(records.map(record => record.filename || 'Unknown file'))];
+    const displayFileNames = uniqueFileNames.slice(0, 5);
+    const remainingFiles = uniqueFileNames.length > 5 ? uniqueFileNames.length - 5 : 0;
+
+    // Create summary card
+    const summaryHTML = `
+        <div class="results-summary-card">
+            <div class="summary-header">
+                <div class="summary-icon">
+                    <i class="fas fa-check-circle"></i>
                 </div>
-                <div class="result-details">
-                    <div class="result-field">
-                        <div class="field-label">Account Number</div>
-                        <div class="field-value">${record.account_number || 'N/A'}</div>
-                    </div>
-                    <div class="result-field">
-                        <div class="field-label">Account Name</div>
-                        <div class="field-value">${record.account_name || 'N/A'}</div>
-                    </div>
-                    <div class="result-field">
-                        <div class="field-label">SWIFT/BIC</div>
-                        <div class="field-value">${record.swift_code || 'N/A'}</div>
-                    </div>
-                    <div class="result-field">
-                        <div class="field-label">IBAN</div>
-                        <div class="field-value">${record.iban || 'N/A'}</div>
-                    </div>
+                <div class="summary-counts">
+                    <div class="total-records">${records.length}</div>
+                    <div class="records-label">Records Processed</div>
                 </div>
             </div>
-        `;
-    });
+            <div class="files-processed">
+                <h4>Files Processed:</h4>
+                <ul class="file-list">
+                    ${displayFileNames.map(name => `<li><i class="fas fa-file-alt"></i> ${name}</li>`).join('')}
+                    ${remainingFiles > 0 ? `<li class="more-files">+ ${remainingFiles} more files</li>` : ''}
+                </ul>
+            </div>
+        </div>
+    `;
 
-    if (records.length > 5) {
-        html += `<div class="more-results">+ ${records.length - 5} more records</div>`;
+    // Update the DOM
+    const resultsTableBody = document.getElementById('resultsTableBody');
+    if (resultsTableBody) {
+        // Clear existing rows
+        resultsTableBody.innerHTML = '';
+
+        // Add rows for each record
+        records.forEach(record => {
+            const row = document.createElement('tr');
+            row.innerHTML = `
+                <td>${record.filename || 'Unknown'}</td>
+                <td>${record.bank_name || 'N/A'}</td>
+                <td>${record.account_name || 'N/A'}</td>
+                <td>${record.account_number || 'N/A'}</td>
+                <td>${record.sort_code || 'N/A'}</td>
+                <td>${record.iban || 'N/A'}</td>
+                <td>${record.swift_code || 'N/A'}</td>
+                <td>${record.routing_number || 'N/A'}</td>
+                <td>${record.bsb_code || 'N/A'}</td>
+            `;
+            resultsTableBody.appendChild(row);
+        });
     }
 
-    extractionResults.innerHTML = html;
+    // Insert summary card before the table
+    if (resultsTableContainer) {
+        // Check if summary card already exists
+        let summaryCard = document.querySelector('.results-summary-card');
+        if (!summaryCard) {
+            resultsTableContainer.insertAdjacentHTML('beforebegin', summaryHTML);
+        } else {
+            summaryCard.outerHTML = summaryHTML;
+        }
+    }
+
+    // Add CSS for the summary card
+    if (!document.getElementById('summary-card-styles')) {
+        const style = document.createElement('style');
+        style.id = 'summary-card-styles';
+        style.textContent = `
+            .results-summary-card {
+                background: linear-gradient(135deg, #f5f7fa, #e9f0f6);
+                border-radius: 12px;
+                padding: 20px;
+                margin-bottom: 20px;
+                box-shadow: 0 4px 15px rgba(0, 0, 0, 0.05);
+                border: 1px solid #e0e6ed;
+            }
+            
+            .summary-header {
+                display: flex;
+                align-items: center;
+                margin-bottom: 15px;
+            }
+            
+            .summary-icon {
+                font-size: 2.5rem;
+                color: #4CAF50;
+                margin-right: 20px;
+            }
+            
+            .summary-counts {
+                display: flex;
+                flex-direction: column;
+            }
+            
+            .total-records {
+                font-size: 2rem;
+                font-weight: bold;
+                color: #2c3e50;
+                line-height: 1;
+            }
+            
+            .records-label {
+                font-size: 0.9rem;
+                color: #7f8c8d;
+            }
+            
+            .files-processed h4 {
+                margin-top: 0;
+                margin-bottom: 10px;
+                font-size: 1rem;
+                color: #34495e;
+            }
+            
+            .file-list {
+                list-style: none;
+                padding: 0;
+                margin: 0;
+                display: flex;
+                flex-wrap: wrap;
+                gap: 8px;
+            }
+            
+            .file-list li {
+                background-color: #ffffff;
+                padding: 6px 12px;
+                border-radius: 20px;
+                font-size: 0.85rem;
+                display: inline-flex;
+                align-items: center;
+                box-shadow: 0 2px 5px rgba(0,0,0,0.05);
+                border: 1px solid #eaeaea;
+            }
+            
+            .file-list li i {
+                margin-right: 5px;
+                color: #3498db;
+            }
+            
+            .more-files {
+                background-color: #f1f5f9 !important;
+                color: #64748b;
+            }
+            
+            @media (max-width: 768px) {
+                .summary-header {
+                    flex-direction: column;
+                    text-align: center;
+                }
+                
+                .summary-icon {
+                    margin-right: 0;
+                    margin-bottom: 10px;
+                }
+                
+                .file-list {
+                    justify-content: center;
+                }
+            }
+        `;
+        document.head.appendChild(style);
+    }
 }
 
 async function checkSessionStatus() {
