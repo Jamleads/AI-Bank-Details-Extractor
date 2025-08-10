@@ -10,8 +10,8 @@ import json
 import os
 import tempfile
 from typing import List, Dict, Any, Optional, Union
-from fastapi import APIRouter, Depends, File, UploadFile, HTTPException, Request, BackgroundTasks
-from fastapi.responses import FileResponse
+from fastapi import APIRouter, Depends, File, UploadFile, HTTPException, Request, BackgroundTasks, Form
+from fastapi.responses import FileResponse, StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from werkzeug.utils import secure_filename
 from app.db.database import get_async_db
@@ -39,6 +39,7 @@ from fastapi.responses import RedirectResponse, HTMLResponse
 from fastapi.templating import Jinja2Templates
 
 from stream_unzip import async_stream_unzip
+from asyncio import Semaphore, gather, create_task
 
 # Setup logging
 logger = logging.getLogger(__name__)
@@ -164,7 +165,7 @@ async def extract_zip_files_async(zip_data: bytes) -> List[Dict[str, Any]]:
 @router.post("/extract", response_model=ProcessResponse, description="Extract bank details from uploaded files")
 async def extract_bank_details(
     files: List[UploadFile] = File(...),
-    header_config_id: Optional[int] = None,
+    header_config_id: Optional[str] = Form(None),
     gemini_service: GeminiService = Depends(get_gemini_service),
     db: AsyncSession = Depends(get_async_db),
     current_user: UserDB = Depends(get_current_user_required)
@@ -184,6 +185,7 @@ async def extract_bank_details(
     """
     try:
         logger.debug(f"Extract endpoint called with {len(files)} files and header_config_id={header_config_id}")
+        logger.debug(f"Debug: header_config_id type: {type(header_config_id)}, value: '{header_config_id}', repr: {repr(header_config_id)}")
         
         if not files:
             logger.warning("No files provided")
@@ -196,7 +198,7 @@ async def extract_bank_details(
             if not header_config:
                 logger.warning(f"Header configuration with ID {header_config_id} not found")
                 raise HTTPException(status_code=404, detail="Header configuration not found")
-            logger.debug(f"Using header configuration: {header_config.name}")
+            logger.debug(f"Using header configuration: {getattr(header_config, 'name', 'unknown')}")
         
         total_records_added = 0
         all_results = []
@@ -205,7 +207,33 @@ async def extract_bank_details(
         # Define allowed file extensions
         allowed_extensions = ['.pdf', '.png', '.jpg', '.jpeg', '.webp', '.zip']
         
-        # Process each file
+        # Concurrency control
+        MAX_CONCURRENCY = 6
+        sem = Semaphore(MAX_CONCURRENCY)
+        user_id = get_user_id(current_user)
+
+        async def handle_one_file(proc_filename: str, file_bytes: bytes, ext: str) -> Dict[str, Any]:
+            """Process a single file blob under semaphore and return either ok/err dict."""
+            async with sem:
+                try:
+                    logger.debug(f"Processing file: {proc_filename} ({len(file_bytes)} bytes, {ext})")
+                    json_data = await gemini_service.extract_bank_details_async(file_bytes, ext, header_config)
+                    # Save raw extraction data
+                    raw_result = await save_raw_extraction(user_id, proc_filename, json_data)
+                    if not raw_result.get('success', False):
+                        logger.warning(f"Failed to save raw extraction data for {proc_filename}: {raw_result.get('error')}")
+                    logger.debug(f"Successfully processed file: {proc_filename}")
+                    return {"ok": {"source_pdf": proc_filename, "raw_data": json_data}}
+                except HTTPException as he:
+                    logger.error(f"HTTP Exception processing file {proc_filename}: {str(he)}")
+                    return {"err": {"filename": proc_filename, "error": he.detail}}
+                except Exception as e:
+                    logger.error(f"Error processing file {proc_filename}: {str(e)}")
+                    logger.error(traceback.format_exc())
+                    return {"err": {"filename": proc_filename, "error": f"Processing error: {str(e)}"}}
+        
+        # Build tasks
+        tasks = []
         for file in files:
             # Validate file
             if not file.filename:
@@ -223,101 +251,81 @@ async def extract_bank_details(
                 })
                 continue
                 
-            # Secure the filename
-            filename = os.path.splitext(file.filename)[0] # Keep original filename for secure_filename
-            filename = secure_filename(filename) # Use secure_filename for consistency
+            # Secure the filename (without extension)
+            filename_base = os.path.splitext(file.filename)[0]
+            safe_filename = secure_filename(filename_base)
             
+            # Read file content
             try:
-                # Read file content
                 file_content = await file.read()
-                
-                if len(file_content) == 0:
-                    logger.warning(f"File {filename} is empty")
-                    errors.append({"filename": filename, "error": "File is empty"})
-                    continue
-                
-                # Handle ZIP files specially - extract and process all files
-                if file_ext.lower() == '.zip':
-                    logger.debug(f"Processing ZIP file: {filename}")
-                    
-                    # Extract files from ZIP
-                    extracted_files = await extract_zip_files_async(file_content)
-                    
-                    if not extracted_files:
-                        logger.warning(f"No valid files found in ZIP: {filename}")
-                        errors.append({
-                            "filename": filename,
-                            "error": "No valid files found in the ZIP archive"
-                        })
-                        continue
-                    
-                    logger.debug(f"Found {len(extracted_files)} valid files in ZIP: {filename}")
-                    
-                    # Process each extracted file
-                    zip_results = []
-                    zip_errors = []
-                    zip_records_added = 0
-                    
-                    for extracted_file in extracted_files:
-                        extracted_filename = secure_filename(extracted_file['filename'])
-                        extracted_data = extracted_file['data']
-                        extracted_ext = extracted_file['ext']
-                        
-                        try:
-                            # Extract bank details with Gemini
-                            json_data = await gemini_service.extract_bank_details_async(extracted_data, extracted_ext, header_config)
-                            logger.debug(f"Gemini API returned JSON data for file {json_data}")
-                            
-                            # Save raw extraction data
-                            raw_result = await save_raw_extraction(get_user_id(current_user), extracted_filename, json_data)
-                            if not raw_result['success']:
-                                logger.warning(f"Failed to save raw extraction data: {raw_result.get('error')}")
-
-                            # Add results to response - include the full JSON data
-                            zip_results.append({
-                                "source_pdf": extracted_filename,
-                                "raw_data": json_data
-                            })
-                        except Exception as e:
-                            logger.error(f"Error processing extracted file {extracted_filename}: {str(e)}")
-                            logger.error(traceback.format_exc())
-                            zip_errors.append({
-                                "filename": extracted_filename,
-                                "error": f"Processing error: {str(e)}"
-                            })
-                    
-                    # Add ZIP processing results to overall results
-                    total_records_added += zip_records_added
-                    all_results.extend(zip_results)
-                    errors.extend(zip_errors)
-                    
-                else:
-                    # Process regular file (PDF, PNG, JPG, JPEG, WebP)
-                    # Extract bank details with Gemini
-                    json_data = await gemini_service.extract_bank_details_async(file_content, file_ext, header_config)
-                    
-                    # Save raw extraction data
-                    logger.debug(f"Saving raw extraction data for file {filename} and data \n\n {json_data}")
-                    raw_result = await save_raw_extraction(get_user_id(current_user), filename, json_data)
-                    if not raw_result['success']:
-                        logger.warning(f"Failed to save raw extraction data: {raw_result.get('error')}")
-                    
-                    # Add results to response - include the full JSON data
-                    all_results.append({
-                        "source_pdf": filename,
-                        "raw_data": json_data
-                    })
-            except HTTPException as he:
-                logger.error(f"HTTP Exception processing file {filename}: {str(he)}")
-                errors.append({"filename": filename, "error": he.detail})
-                continue
+                logger.debug(f"Read file: {safe_filename} ({len(file_content)} bytes, {file_ext})")
             except Exception as e:
-                logger.error(f"Error processing file {filename}: {str(e)}")
-                logger.error(traceback.format_exc())
-                errors.append({"filename": filename, "error": f"Processing error: {str(e)}"})
+                logger.error(f"Error reading file {safe_filename}: {str(e)}")
+                errors.append({"filename": safe_filename, "error": f"Failed to read file: {str(e)}"})
                 continue
+            
+            if len(file_content) == 0:
+                logger.warning(f"File {safe_filename} is empty")
+                errors.append({"filename": safe_filename, "error": "File is empty"})
+                continue
+            
+            if file_ext.lower() == '.zip':
+                logger.debug(f"Processing ZIP file (streaming): {safe_filename}")
+                # Stream unzip and schedule processing for each entry as soon as it's ready
+                async def byte_stream():
+                    yield file_content
+
+                valid_count = 0
+                async for z_name, z_size, z_chunks in async_stream_unzip(byte_stream()):
+                    # Normalize name
+                    if isinstance(z_name, bytes):
+                        z_name = z_name.decode('utf-8')
+                    extracted_ext = f".{z_name.rsplit('.', 1)[-1].lower()}" if '.' in z_name else ''
+
+                    if extracted_ext not in {'.pdf', '.png', '.jpg', '.jpeg', '.webp'}:
+                        continue
+
+                    # Assemble this entry only
+                    buf = bytearray()
+                    async for chunk in z_chunks:
+                        if isinstance(chunk, str):
+                            chunk = chunk.encode()
+                        buf.extend(chunk)
+
+                    if len(buf) > 100:
+                        extracted_filename = secure_filename(z_name)
+                        logger.debug(f"Extracted from ZIP: {extracted_filename} ({len(buf)} bytes, {extracted_ext})")
+                        # Start processing immediately
+                        tasks.append(create_task(handle_one_file(extracted_filename, bytes(buf), extracted_ext)))
+                        valid_count += 1
+
+                if valid_count == 0:
+                    logger.warning(f"No valid files found in ZIP: {safe_filename}")
+                    errors.append({
+                        "filename": safe_filename,
+                        "error": "No valid files found in the ZIP archive"
+                    })
+                    continue
+                else:
+                    logger.debug(f"Found {valid_count} valid files in ZIP: {safe_filename}")
+            else:
+                # Schedule regular file processing
+                tasks.append(create_task(handle_one_file(safe_filename, file_content, file_ext)))
         
-        logger.debug(f"Extract endpoint completed with {total_records_added} total records added and {len(errors)} errors")
+        # Execute tasks with bounded concurrency
+        if tasks:
+            logger.debug(f"Executing {len(tasks)} processing tasks with max concurrency {MAX_CONCURRENCY}")
+            results_list = await gather(*tasks, return_exceptions=True)
+            for item in results_list:
+                if isinstance(item, Exception):
+                    errors.append({"filename": "unknown", "error": f"Processing error: {str(item)}"})
+                elif isinstance(item, dict):
+                    if 'ok' in item:
+                        all_results.append(item['ok'])
+                    elif 'err' in item:
+                        errors.append(item['err'])
+        
+        logger.debug(f"Extract endpoint completed: {len(all_results)} successful, {len(errors)} errors")
         
         # If no successful results and we have errors, return the first error
         if len(all_results) == 0 and len(errors) > 0:

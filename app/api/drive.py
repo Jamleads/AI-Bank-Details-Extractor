@@ -28,7 +28,7 @@ class DriveExportRequest(BaseModel):
     """Request model for Drive export"""
     file_name: str
     format: str = "csv"
-    config_id: Optional[int] = None
+    config_id: Optional[str] = None
     custom_headers: Optional[str] = None
 
 

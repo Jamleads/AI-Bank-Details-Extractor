@@ -4,12 +4,23 @@ DynamoDB database operations
 import os
 import boto3
 import uuid
+import logging
 from datetime import datetime
 from decimal import Decimal
 from typing import Dict, List, Optional, Any, Union
 from boto3.dynamodb.conditions import Key, Attr
 
 from app.core.config import settings
+
+# Reduce AWS SDK logging verbosity
+logging.getLogger('boto3').setLevel(logging.WARNING)
+logging.getLogger('botocore').setLevel(logging.WARNING)
+logging.getLogger('urllib3').setLevel(logging.WARNING)
+logging.getLogger('s3transfer').setLevel(logging.WARNING)
+
+# Setup DynamoDB service logger
+logger = logging.getLogger(__name__)
+logger.setLevel(logging.INFO)  # Only show INFO and above for DynamoDB operations
 
 # Table names
 USERS_TABLE = settings.USERS_TABLE_NAME
@@ -24,6 +35,7 @@ class DynamoDBService:
 
     def __init__(self):
         """Initialize DynamoDB service"""
+        logger.info("Initializing DynamoDB service")
         # Initialize DynamoDB client
         kwargs = {}
         if settings.DYNAMODB_ENDPOINT_URL:
@@ -36,6 +48,7 @@ class DynamoDBService:
             aws_secret_access_key=settings.AWS_SECRET_ACCESS_KEY,
             **kwargs
         )
+        logger.info("DynamoDB service initialized successfully")
         
     def _execute_put_item(self, table_name: str, item: Dict[str, Any]) -> Dict[str, Any]:
         """Execute a PutItem operation on DynamoDB
@@ -62,6 +75,7 @@ class DynamoDBService:
         
         table = self.dynamodb.Table(table_name)
         table.put_item(Item=processed_item)
+        logger.debug(f"Put item in {table_name}: {item.get('id', 'unknown_id')}")
         return item
     
     def _execute_get_item(self, table_name: str, key: Dict[str, Any]) -> Optional[Dict[str, Any]]:

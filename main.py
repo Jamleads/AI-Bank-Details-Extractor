@@ -35,6 +35,17 @@ logging.basicConfig(
         logging.StreamHandler()
     ]
 )
+
+# Reduce AWS SDK logging verbosity (these are very chatty at DEBUG level)
+logging.getLogger('boto3').setLevel(logging.WARNING)
+logging.getLogger('botocore').setLevel(logging.WARNING)
+logging.getLogger('urllib3').setLevel(logging.WARNING)
+logging.getLogger('s3transfer').setLevel(logging.WARNING)
+logging.getLogger('botocore.credentials').setLevel(logging.WARNING)
+logging.getLogger('botocore.utils').setLevel(logging.WARNING)
+logging.getLogger('botocore.hooks').setLevel(logging.WARNING)
+logging.getLogger('botocore.loaders').setLevel(logging.WARNING)
+
 logger = logging.getLogger(__name__)
 
 # Helper function to get user email

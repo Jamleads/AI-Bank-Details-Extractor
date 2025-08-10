@@ -116,6 +116,27 @@ function initializeApp() {
     const clearBtn = document.getElementById('clear-button');
     if (clearBtn) clearBtn.disabled = false;
 
+    // Add Refresh Results handler
+    const refreshBtn = document.getElementById('refreshBtn');
+    if (refreshBtn) {
+        refreshBtn.addEventListener('click', async () => {
+            const original = refreshBtn.innerHTML;
+            try {
+                refreshBtn.disabled = true;
+                refreshBtn.innerHTML = '<i class="fas fa-sync fa-spin"></i> Refreshing...';
+                await updateSessionStatus();
+                updateExtractionResults();
+                showStatusMessage('Results refreshed', 'success');
+            } catch (e) {
+                console.error('Failed to refresh results:', e);
+                showStatusMessage('Failed to refresh results', 'error');
+            } finally {
+                refreshBtn.disabled = false;
+                refreshBtn.innerHTML = original;
+            }
+        });
+    }
+
     // Check session status to load any existing data
     checkSessionStatus();
 
@@ -184,6 +205,7 @@ async function loadHeaderConfigurations() {
 
         if (response.ok) {
             const configs = await response.json();
+            console.log('Debug: Loaded header configurations:', configs);
 
             // Get both dropdowns
             const exportDropdown = document.getElementById('header-config-dropdown');
@@ -231,6 +253,9 @@ async function loadHeaderConfigurations() {
                     }
                 }
             });
+
+            console.log('Debug: Upload dropdown options after loading:',
+                uploadDropdown ? Array.from(uploadDropdown.options).map(opt => ({ value: opt.value, text: opt.textContent })) : 'dropdown not found');
         } else {
             console.error('Failed to load header configurations');
         }
@@ -558,8 +583,13 @@ async function uploadFiles(files) {
 
         // Add header configuration if selected
         const headerConfigId = document.getElementById('upload-header-config').value;
-        if (headerConfigId) {
+        console.log('Debug: headerConfigId from dropdown:', headerConfigId);
+        console.log('Debug: headerConfigId type:', typeof headerConfigId, 'length:', headerConfigId.length);
+        if (headerConfigId && headerConfigId.trim() !== '') {
             formData.append('header_config_id', headerConfigId);
+            console.log('Debug: Added header_config_id to formData:', headerConfigId);
+        } else {
+            console.log('Debug: No header_config_id selected or empty string, sending as None');
         }
 
         const token = getToken();
@@ -686,64 +716,26 @@ async function updateSessionStatus() {
 }
 
 function updateExtractionResults() {
-    const extractionResults = document.getElementById('extraction-results');
     const resultsPlaceholder = document.getElementById('resultsPlaceholder');
     const resultsTableContainer = document.getElementById('resultsTableContainer');
+    const resultsTableBody = document.getElementById('resultsTableBody');
+    const exportSection = document.getElementById('exportSection');
 
-    if (!extractionResults) return;
+    const records = structuredRecords.length > 0 ? structuredRecords : rawExtractions;
 
-    if (structuredRecords.length === 0 && rawExtractions.length === 0) {
-        // Show placeholder when no results
+    if (!records || records.length === 0) {
         if (resultsPlaceholder) resultsPlaceholder.style.display = 'flex';
         if (resultsTableContainer) resultsTableContainer.style.display = 'none';
+        if (exportSection) exportSection.style.display = 'none';
         return;
     }
 
-    // Hide placeholder, show results
-    if (resultsPlaceholder) resultsPlaceholder.style.display = 'none';
-    if (resultsTableContainer) resultsTableContainer.style.display = 'block';
-
-    // Use structured records if available, otherwise use raw extractions
-    const records = structuredRecords.length > 0 ? structuredRecords : rawExtractions;
-
-    // Get unique file names (limit to 5)
-    const uniqueFileNames = [...new Set(records.map(record => record.filename || 'Unknown file'))];
-    const displayFileNames = uniqueFileNames.slice(0, 5);
-    const remainingFiles = uniqueFileNames.length > 5 ? uniqueFileNames.length - 5 : 0;
-
-    // Create summary card
-    const summaryHTML = `
-        <div class="results-summary-card">
-            <div class="summary-header">
-                <div class="summary-icon">
-                    <i class="fas fa-check-circle"></i>
-                </div>
-                <div class="summary-counts">
-                    <div class="total-records">${records.length}</div>
-                    <div class="records-label">Records Processed</div>
-                </div>
-            </div>
-            <div class="files-processed">
-                <h4>Files Processed:</h4>
-                <ul class="file-list">
-                    ${displayFileNames.map(name => `<li><i class="fas fa-file-alt"></i> ${name}</li>`).join('')}
-                    ${remainingFiles > 0 ? `<li class="more-files">+ ${remainingFiles} more files</li>` : ''}
-                </ul>
-            </div>
-        </div>
-    `;
-
-    // Update the DOM
-    const resultsTableBody = document.getElementById('resultsTableBody');
     if (resultsTableBody) {
-        // Clear existing rows
         resultsTableBody.innerHTML = '';
-
-        // Add rows for each record
         records.forEach(record => {
             const row = document.createElement('tr');
             row.innerHTML = `
-                <td>${record.filename || 'Unknown'}</td>
+                <td>${record.source_pdf || 'Unknown'}</td>
                 <td>${record.bank_name || 'N/A'}</td>
                 <td>${record.account_name || 'N/A'}</td>
                 <td>${record.account_number || 'N/A'}</td>
@@ -757,115 +749,12 @@ function updateExtractionResults() {
         });
     }
 
-    // Insert summary card before the table
-    if (resultsTableContainer) {
-        // Check if summary card already exists
-        let summaryCard = document.querySelector('.results-summary-card');
-        if (!summaryCard) {
-            resultsTableContainer.insertAdjacentHTML('beforebegin', summaryHTML);
-        } else {
-            summaryCard.outerHTML = summaryHTML;
-        }
-    }
+    if (resultsPlaceholder) resultsPlaceholder.style.display = 'none';
+    if (resultsTableContainer) resultsTableContainer.style.display = 'block';
+    if (exportSection) exportSection.style.display = 'block';
 
-    // Add CSS for the summary card
-    if (!document.getElementById('summary-card-styles')) {
-        const style = document.createElement('style');
-        style.id = 'summary-card-styles';
-        style.textContent = `
-            .results-summary-card {
-                background: linear-gradient(135deg, #f5f7fa, #e9f0f6);
-                border-radius: 12px;
-                padding: 20px;
-                margin-bottom: 20px;
-                box-shadow: 0 4px 15px rgba(0, 0, 0, 0.05);
-                border: 1px solid #e0e6ed;
-            }
-            
-            .summary-header {
-                display: flex;
-                align-items: center;
-                margin-bottom: 15px;
-            }
-            
-            .summary-icon {
-                font-size: 2.5rem;
-                color: #4CAF50;
-                margin-right: 20px;
-            }
-            
-            .summary-counts {
-                display: flex;
-                flex-direction: column;
-            }
-            
-            .total-records {
-                font-size: 2rem;
-                font-weight: bold;
-                color: #2c3e50;
-                line-height: 1;
-            }
-            
-            .records-label {
-                font-size: 0.9rem;
-                color: #7f8c8d;
-            }
-            
-            .files-processed h4 {
-                margin-top: 0;
-                margin-bottom: 10px;
-                font-size: 1rem;
-                color: #34495e;
-            }
-            
-            .file-list {
-                list-style: none;
-                padding: 0;
-                margin: 0;
-                display: flex;
-                flex-wrap: wrap;
-                gap: 8px;
-            }
-            
-            .file-list li {
-                background-color: #ffffff;
-                padding: 6px 12px;
-                border-radius: 20px;
-                font-size: 0.85rem;
-                display: inline-flex;
-                align-items: center;
-                box-shadow: 0 2px 5px rgba(0,0,0,0.05);
-                border: 1px solid #eaeaea;
-            }
-            
-            .file-list li i {
-                margin-right: 5px;
-                color: #3498db;
-            }
-            
-            .more-files {
-                background-color: #f1f5f9 !important;
-                color: #64748b;
-            }
-            
-            @media (max-width: 768px) {
-                .summary-header {
-                    flex-direction: column;
-                    text-align: center;
-                }
-                
-                .summary-icon {
-                    margin-right: 0;
-                    margin-bottom: 10px;
-                }
-                
-                .file-list {
-                    justify-content: center;
-                }
-            }
-        `;
-        document.head.appendChild(style);
-    }
+    // Load header configurations for the export dropdown
+    loadHeaderConfigurations();
 }
 
 async function checkSessionStatus() {

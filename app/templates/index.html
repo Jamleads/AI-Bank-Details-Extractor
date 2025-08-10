@@ -125,6 +125,7 @@
             <div class="upload-controls">
                 <button type="button" id="processBtn" class="btn btn-primary" disabled>Process Files</button>
                 <button type="button" id="clear-button" class="btn btn-secondary" disabled>Clear All Data</button>
+                <button type="button" id="refreshBtn" class="btn btn-secondary">Refresh Results</button>
             </div>
         </form>
     </div>
@@ -411,8 +412,7 @@
                 const fileIcon = file.type === 'application/pdf' || fileExtension === '.pdf' ? 'fa-file-pdf' :
                     file.type === 'image/png' || fileExtension === '.png' ? 'fa-file-image' :
                         file.type === 'image/jpeg' || fileExtension === '.jpg' || fileExtension === '.jpeg' ? 'fa-file-image' :
-                            file.type === 'image/webp' || fileExtension === '.webp' ? 'fa-file-image' :
-                                file.type === 'application/zip' || fileExtension === '.zip' ? 'fa-file-archive' : 'fa-file';
+                            file.type === 'image/webp' || fileExtension === '.webp' ? 'fa-file-image' : 'fa-file';
 
                 const fileName = document.createElement('div');
                 fileName.className = 'file-name';
