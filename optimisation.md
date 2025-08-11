@@ -9,6 +9,34 @@
 - **No retries/backoff**: Transient Gemini failures cause hard failures; single 60s timeout isn’t tuned.
 - **Heavy logging**: Logging full JSON payloads increases CPU/memory and log volume.
 
+### Concurrent Request Capacity Analysis
+
+#### Current Limits
+- **Per-Lambda concurrency**: 6 documents (hardcoded `MAX_CONCURRENCY`)
+- **HTTPX connections**: 20 max connections to Gemini
+- **Lambda specs**: 1024MB memory, 30s timeout
+- **AWS Lambda**: Up to 1000 concurrent instances (default)
+- **Theoretical max**: ~6,000 concurrent document operations
+
+#### Real-World Constraints
+1. **Gemini API rate limits**: ~60 requests/minute (free tier), ~1500/day
+2. **Lambda timeout**: 30s may be insufficient for large files
+3. **Memory pressure**: 1024MB tight for large files + base64 encoding
+4. **No retry logic**: Transient failures cause hard failures
+
+#### Realistic Capacity Estimates
+- **Conservative**: 10-30 concurrent users, ~60-180 docs/minute
+- **Optimized**: 50-100 concurrent users, ~300-600 docs/minute
+- **Primary bottleneck**: External Gemini API quotas
+
+#### Scaling Recommendations
+1. **Make concurrency configurable**: `MAX_CONCURRENCY` via environment variable
+2. **Increase Lambda resources**: 2048MB memory, 60s timeout
+3. **Implement rate limiting**: Per-user request throttling
+4. **Add retry logic**: Exponential backoff for API failures
+5. **Monitor quotas**: Track Gemini API usage and implement queuing
+6. **Consider async processing**: Queue jobs for background processing
+
 ### Checklist
 - [x] Introduce bounded concurrency (Semaphore/TaskGroup) in `/api/extract` for files and ZIP entries
 - [x] Reuse a single `httpx.AsyncClient` with HTTP/2, tuned limits and timeouts in `GeminiService`

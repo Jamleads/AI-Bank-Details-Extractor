@@ -40,15 +40,17 @@ async def get_admin_user_required(
 @router.post("/upload")
 async def upload_ad(
     image: UploadFile = File(...),
-    ad_text: str = Form(...),
+    link: str = Form(...),
+    ad_text: str = Form(""),
     current_user: UserDB = Depends(get_admin_user_required)
 ):
     """
-    Upload an advertisement image with text
+    Upload a banner-style advertisement with image, link, and optional text
     
     Args:
         image: The ad image file
-        ad_text: The advertisement text
+        link: The URL to redirect when banner is clicked
+        ad_text: Optional text to display below the banner
         current_user: Current admin user
         
     Returns:
@@ -62,7 +64,7 @@ async def upload_ad(
         )
     
     # Upload the ad
-    result = await ads_service.upload_ad(image, ad_text)
+    result = await ads_service.upload_ad(image, link, ad_text)
     
     if not result:
         raise HTTPException(
@@ -86,12 +88,15 @@ async def get_latest_ad(
     Returns:
         Latest ad details with presigned URL
     """
-    ad = ads_service.get_latest_ad()
+    logger.debug("Getting latest ad for user")
+    ad = await ads_service.get_latest_ad()
     
+    logger.debug(f"Found ad: {ad is not None}")
     if not ad:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="No advertisements found"
         )
     
+    logger.debug(f"Returning ad with URL: {ad.get('url', 'No URL')[:50]}...")
     return ad 

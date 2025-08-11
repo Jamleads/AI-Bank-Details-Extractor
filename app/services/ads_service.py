@@ -20,13 +20,14 @@ class AdsService:
         self.s3_service = s3_service
         self.ads_prefix = "ads"  # Prefix for ads in S3
     
-    async def upload_ad(self, image: UploadFile, ad_text: str) -> Optional[Dict[str, Any]]:
+    async def upload_ad(self, image: UploadFile, link: str, ad_text: str = "") -> Optional[Dict[str, Any]]:
         """
-        Upload an advertisement image with text to S3
+        Upload a banner-style advertisement with image, link, and optional text to S3
         
         Args:
             image: The ad image file
-            ad_text: The advertisement text
+            link: The URL to redirect when banner is clicked
+            ad_text: Optional text to display below the banner (default: empty)
             
         Returns:
             Dictionary with ad details or None if upload failed
@@ -39,6 +40,7 @@ class AdsService:
             
             # Upload to S3 with metadata
             metadata = {
+                "link": link,
                 "ad_text": ad_text,
                 "uploaded_at": timestamp
             }
@@ -63,6 +65,7 @@ class AdsService:
             return {
                 "key": file_key,
                 "filename": new_filename,
+                "link": link,
                 "ad_text": ad_text,
                 "uploaded_at": timestamp
             }
@@ -70,7 +73,7 @@ class AdsService:
             logger.error(f"Error uploading ad to S3: {str(e)}")
             return None
     
-    def get_latest_ad(self, expiration: int = 43200) -> Optional[Dict[str, Any]]:
+    async def get_latest_ad(self, expiration: int = 43200) -> Optional[Dict[str, Any]]:
         """
         Get the latest advertisement with a presigned URL
         
@@ -81,9 +84,11 @@ class AdsService:
             Dictionary with ad details and presigned URL or None if no ads found
         """
         try:
+            logger.debug("Listing ads from S3...")
             # List all ads
             ads = self.s3_service.list_files(prefix=self.ads_prefix)
             
+            logger.debug(f"Found {len(ads) if ads else 0} ads in S3")
             if not ads:
                 logger.info("No ads found in S3")
                 return None
@@ -92,6 +97,7 @@ class AdsService:
             ads.sort(key=lambda x: x['last_modified'], reverse=True)
             latest_ad = ads[0]
             
+            logger.debug(f"Latest ad key: {latest_ad['key']}")
             # Get the ad metadata
             response = self.s3_service.s3.head_object(
                 Bucket=self.s3_service.bucket_name,
@@ -100,7 +106,9 @@ class AdsService:
             
             metadata = response.get('Metadata', {})
             ad_text = metadata.get('ad_text', '')
-            
+            link = metadata.get('link', '')
+            logger.debug(f"Ad metadata - link: {link}, text: {ad_text[:50] if ad_text else 'None'}...")
+
             # Generate a presigned URL for the image
             presigned_url = self.s3_service.s3.generate_presigned_url(
                 'get_object',
@@ -111,9 +119,11 @@ class AdsService:
                 ExpiresIn=expiration
             )
             
+            logger.debug(f"Generated presigned URL: {presigned_url[:100]}...")
             return {
                 "key": latest_ad['key'],
                 "filename": latest_ad['filename'],
+                "link": link,
                 "ad_text": ad_text,
                 "uploaded_at": metadata.get('uploaded_at', ''),
                 "url": presigned_url
