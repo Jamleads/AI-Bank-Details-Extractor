@@ -20,11 +20,14 @@ from app.api.header_config import router as header_config_router
 from app.api.drive import router as drive_router
 from app.api.payment import router as payment_router
 from app.api.ads import router as ads_router
+from app.api.pricing_actions import router as pricing_actions_router
+from app.api.admin import router as admin_router
 from app.core.config import settings
 from app.db import init_db
 from app.services.auth_service import oauth, get_current_user, get_current_user_required
 from app.db.models import User
 from app.core.admin_config import is_admin_email
+from app.utils.auth import get_user_email
 
 # Configure logging
 logging.basicConfig(
@@ -47,13 +50,6 @@ logging.getLogger('botocore.hooks').setLevel(logging.WARNING)
 logging.getLogger('botocore.loaders').setLevel(logging.WARNING)
 
 logger = logging.getLogger(__name__)
-
-# Helper function to get user email
-def get_user_email(user):
-    """Get user email handling both object and dictionary access"""
-    if user is None:
-        return None
-    return user["email"] if isinstance(user, dict) else user.email
 
 # Helper function to normalize user data for templates
 def normalize_user_data(user):
@@ -174,112 +170,8 @@ app.include_router(header_config_router)
 app.include_router(drive_router)
 app.include_router(payment_router, prefix="/api/payment", tags=["payment"])
 app.include_router(ads_router, prefix="/api", tags=["ads"], include_in_schema=False)
-# Create and include admin router
-from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy import func, select
-from app.db.database import get_async_db
-from app.db.models import User, BankRecord, RawExtraction
-from app.db.adapter import db as db_adapter
-
-admin_router = APIRouter(prefix="/api/admin", tags=["admin"], include_in_schema=False)
-
-@admin_router.post("/users/{user_id}/disable")
-async def disable_user(
-    user_id: str,
-    current_user: User = Depends(get_current_user_required)
-):
-    """Disable a user by setting their status to inactive
-    
-    Args:
-        user_id: User ID to disable
-        current_user: Current admin user
-        
-    Returns:
-        Success message
-    """
-    try:
-        # Update user status to inactive
-        db_adapter.update_user(user_id, {"status": "inactive"})
-        
-        return {"success": True, "message": f"User {user_id} has been disabled"}
-    except Exception as e:
-        logger.error(f"Error disabling user {user_id}: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Failed to disable user: {str(e)}")
-
-@admin_router.get("/users", include_in_schema=False)
-async def get_users(
-    request: Request,
-    db = Depends(get_async_db),
-    current_user: User = Depends(get_current_user)
-):
-    """Get all users with their stats"""
-    # Check if user is admin
-    user_email = get_user_email(current_user)
-    if not user_email or not is_admin_email(user_email):
-        raise HTTPException(status_code=403, detail="Admin access required")
-
-    try:
-
-        users = db_adapter._db_provider.get_all_users()
-        
-        # Format the response
-        users_list = []
-        for user in users:
-            # Get counts for each user
-            user_id = user.get("id")
-            extractions = db_adapter._db_provider.get_raw_extractions_by_user(user_id)
-            
-            users_list.append({
-                "id": user_id,
-                "email": user.get("email"),
-                "name": user.get("name"),
-                "google_id": user.get("google_id"),
-                "subscription_tier": user.get("subscription_tier", "FREE").upper(),
-                "created_at": user.get("created_at"),
-                "last_login": user.get("last_login"),
-                "extractions_count": len(extractions),
-                "status": user.get("status", "active"),
-                "is_admin": is_admin_email(user.get("email", "")) if user.get("email") else False
-            })
-        
-        return users_list
-    except Exception as e:
-        logger.error(f"Error getting users: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Failed to get users: {str(e)}")
-
-
-@admin_router.get("/stats", include_in_schema=False)
-async def get_stats(
-    request: Request,
-    db = Depends(get_async_db),
-    current_user: User = Depends(get_current_user_required)
-):
-    """Get system statistics"""
-    # Check if user is admin
-    user_email = get_user_email(current_user)
-    if not user_email or not is_admin_email(user_email):
-        raise HTTPException(status_code=403, detail="Admin access required")
-    
-    try:
-        if db_adapter.db_type != "sqlite":
-            # For DynamoDB, use the adapter
-            users = db_adapter._db_provider.get_all_users()
-            users_count = len(users)
-            
-            # This is inefficient but works for small datasets
-            extractions_count = 0
-            for user in users:
-                user_id = user.get("id")
-                extractions = db_adapter._db_provider.get_raw_extractions_by_user(user_id)
-                extractions_count += len(extractions)
-
-        return {
-            "users_count": users_count or 0,
-            "extractions_count": extractions_count or 0
-        }
-    except Exception as e:
-        logger.error(f"Error getting stats: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Failed to get stats: {str(e)}")
+app.include_router(pricing_actions_router, prefix="/api/pricing", tags=["pricing"])
+app.include_router(admin_router)
 
 # Add endpoint to check if user is admin
 @app.get("/api/user/is-admin", include_in_schema=False)
@@ -294,9 +186,6 @@ async def check_is_admin(
         if user_email:
             is_admin = is_admin_email(user_email)
     return {"is_admin": is_admin}
-
-# Include admin router
-app.include_router(admin_router)
 
 # Initialize OAuth
 app.state.oauth = oauth

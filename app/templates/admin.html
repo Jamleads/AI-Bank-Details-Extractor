@@ -317,6 +317,14 @@
             <h3>Total Extractions</h3>
             <div class="stat-value" id="extractions-count">-</div>
         </div>
+        <div class="stat-card">
+            <h3>Pricing Card Clicks</h3>
+            <div class="stat-value" id="pricing-actions-count">-</div>
+        </div>
+        <div class="stat-card">
+            <h3>Most Clicked Tier</h3>
+            <div class="stat-value" id="most-clicked-tier">-</div>
+        </div>
     </div>
 
     <h2>User Management</h2>
@@ -345,6 +353,35 @@
                     <!-- User rows will be populated here -->
                 </tbody>
             </table>
+        </div>
+    </div>
+
+    <!-- Pricing Actions Section -->
+    <div class="admin-section">
+        <h2>Pricing Actions</h2>
+        <p>Track user interactions with pricing cards to understand user behavior and preferences.</p>
+
+        <div id="pricing-actions-container">
+            <div class="loading-spinner" id="pricing-loading-spinner">
+                <div class="spinner"></div>
+            </div>
+            <div class="table-responsive">
+                <table class="users-table" id="pricing-actions-table" style="display: none;">
+                    <thead>
+                        <tr>
+                            <th>Date/Time</th>
+                            <th>Email</th>
+                            <th>Tier Clicked</th>
+                            <th>Price</th>
+                            <th>User Tier</th>
+                            <th>IP Address</th>
+                        </tr>
+                    </thead>
+                    <tbody id="pricing-actions-table-body">
+                        <!-- Pricing actions will be populated here -->
+                    </tbody>
+                </table>
+            </div>
         </div>
     </div>
 
@@ -426,6 +463,7 @@
                 // Load admin data
                 loadAdminData();
                 setupAdForm();
+                loadPricingActions();
             })
             .catch(error => {
                 console.error('Error checking admin status:', error);
@@ -448,12 +486,36 @@
                 .then(stats => {
                     document.getElementById('users-count').textContent = stats.users_count;
                     document.getElementById('extractions-count').textContent = stats.extractions_count;
+                    document.getElementById('pricing-actions-count').textContent = stats.pricing_actions_count;
+                    document.getElementById('most-clicked-tier').textContent = stats.most_clicked_tier || 'N/A';
                 })
                 .catch(error => {
                     console.error('Error loading stats:', error);
                 });
 
-            // Load users
+            // Load pricing actions stats
+            fetch('/api/admin/pricing-actions/stats', {
+                headers: {
+                    'Authorization': `Bearer ${token}`
+                }
+            })
+                .then(response => {
+                    if (!response.ok) {
+                        throw new Error(`Error: ${response.status}`);
+                    }
+                    return response.json();
+                })
+                .then(stats => {
+                    document.getElementById('pricing-actions-count').textContent = stats.total_actions || 0;
+                    document.getElementById('most-clicked-tier').textContent = stats.most_clicked_tier || 'N/A';
+                })
+                .catch(error => {
+                    console.error('Error loading pricing stats:', error);
+                    document.getElementById('pricing-actions-count').textContent = '0';
+                    document.getElementById('most-clicked-tier').textContent = 'N/A';
+                });
+
+            // Load users (existing code)
             fetch('/api/admin/users', {
                 headers: {
                     'Authorization': `Bearer ${token}`
@@ -665,6 +727,83 @@
                         submitBtn.disabled = false;
                         submitBtn.textContent = 'Upload Advertisement';
                     });
+            });
+        }
+
+        function loadPricingActions() {
+            // Load pricing actions data
+            fetch('/api/admin/pricing-actions?limit=200', {
+                headers: {
+                    'Authorization': `Bearer ${token}`
+                }
+            })
+                .then(response => {
+                    if (!response.ok) {
+                        throw new Error(`Error: ${response.status}`);
+                    }
+                    return response.json();
+                })
+                .then(data => {
+                    // Hide spinner and show table
+                    document.getElementById('pricing-loading-spinner').style.display = 'none';
+                    document.getElementById('pricing-actions-table').style.display = 'table';
+
+                    // Populate pricing actions table
+                    populatePricingActionsTable(data.pricing_actions || []);
+                })
+                .catch(error => {
+                    console.error('Error loading pricing actions:', error);
+                    document.getElementById('pricing-loading-spinner').style.display = 'none';
+                    document.getElementById('pricing-actions-container').innerHTML =
+                        `<div class="error-message">Error loading pricing actions: ${error.message}</div>`;
+                });
+        }
+
+        function populatePricingActionsTable(actions) {
+            const tableBody = document.getElementById('pricing-actions-table-body');
+            tableBody.innerHTML = '';
+
+            if (actions.length === 0) {
+                const row = document.createElement('tr');
+                row.innerHTML = '<td colspan="7" style="text-align: center; color: #666;">No pricing actions found</td>';
+                tableBody.appendChild(row);
+                return;
+            }
+
+            actions.forEach(action => {
+                const row = document.createElement('tr');
+
+                // Format timestamp
+                let formattedDate = 'N/A';
+                if (action.timestamp) {
+                    try {
+                        const date = new Date(action.timestamp);
+                        formattedDate = date.toLocaleString();
+                    } catch (e) {
+                        formattedDate = action.timestamp;
+                    }
+                }
+
+                // Format price
+                const price = action.price !== undefined && action.price !== null ?
+                    `$${parseFloat(action.price).toFixed(2)}` : 'N/A';
+
+                // Tier badge
+                const tierBadge = `<span class="badge badge-primary">${action.pricing_tier || 'N/A'}</span>`;
+
+                // User tier badge
+                const userTierBadge = `<span class="badge badge-success">${action.user_subscription_tier || 'FREE'}</span>`;
+
+                row.innerHTML = `
+                    <td>${formattedDate}</td>
+                    <td>${action.user_email || 'N/A'}</td>
+                    <td>${tierBadge}</td>
+                    <td>${price}</td>
+                    <td>${userTierBadge}</td>
+                    <td title="${action.ip_address || 'N/A'}">${action.ip_address ? action.ip_address.substring(0, 12) + '...' : 'N/A'}</td>
+                `;
+
+                tableBody.appendChild(row);
             });
         }
     });

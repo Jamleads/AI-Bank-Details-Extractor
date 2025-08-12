@@ -373,30 +373,47 @@ async def get_session_status(
     try:
         # Get raw extractions
         raw_extractions = await get_raw_extractions(get_user_id(current_user), db)
-        # Convert records to dict for response
+        
+        # Debug: Log the structure of the first record
+        if raw_extractions:
+            logger.debug(f"First raw extraction record structure: {raw_extractions[0]}")
+            first_raw_data = raw_extractions[0].get('raw_data', {})
+            logger.debug(f"First raw_data structure: {first_raw_data}")
+            logger.debug(f"Raw_data keys: {list(first_raw_data.keys()) if isinstance(first_raw_data, dict) else 'Not a dict'}")
+        
+        # Return the raw extraction data exactly as it was extracted
         results = []
         for record in raw_extractions:
-        
-            for bank_detail in record.get('raw_data', {}).get('bank_details', []):
-                result_dict = {
-                    'source_pdf': record.get('source_pdf', ''),
-                    'account_number': bank_detail.get('account_number'),
-                    'account_name': bank_detail.get('account_name'),
-                    'bank_name': bank_detail.get('bank_name'),
-                    'sort_code': bank_detail.get('sort_code'),
-                    'iban': bank_detail.get('iban'),
-                    'swift_code': bank_detail.get('swift_code'),
-                    'routing_number': bank_detail.get('routing_number'),
-                    'bsb_code': bank_detail.get('bsb_code'),
-                    'branch_code': bank_detail.get('branch_code'),
-                    'branch_address': bank_detail.get('branch_address'),
-                    'account_type': bank_detail.get('account_type'),
-                    'currency': bank_detail.get('currency'),
-                    'balance': bank_detail.get('balance'),
-                    'other_details': bank_detail.get('other_details'),
-                    'is_structured_record': True
-                }
-                results.append(result_dict) 
+            # Get the raw_data which contains all the extracted information
+            raw_data = record.get('raw_data', {})
+            
+            # Create base record with metadata
+            base_record = {
+                'source_pdf': record.get('source_pdf', ''),
+                'extraction_date': record.get('created_at', ''),
+            }
+            
+            # If raw_data is empty or None, skip this record
+            if not raw_data:
+                continue
+            
+            # If raw_data has a bank_details list, process each item
+            if isinstance(raw_data, dict) and 'bank_details' in raw_data and isinstance(raw_data['bank_details'], list):
+                for bank_detail in raw_data['bank_details']:
+                    if isinstance(bank_detail, dict):
+                        # Merge base record with bank detail
+                        result_record = {**base_record, **bank_detail}
+                        results.append(result_record)
+            else:
+                # If raw_data doesn't have bank_details structure, use it directly
+                if isinstance(raw_data, dict):
+                    # Merge base record with all raw data
+                    result_record = {**base_record, **raw_data}
+                    results.append(result_record)
+                else:
+                    # If raw_data is not a dict, create a record with just the base info
+                    base_record['raw_content'] = str(raw_data)
+                    results.append(base_record)
         
         return SessionStatus(
             results=results,
@@ -879,4 +896,38 @@ async def get_presigned_urls(
         presigned_urls.append(presigned_url)
     
     return {"presigned_urls": presigned_urls}
+
+
+@router.get("/debug/raw-data", include_in_schema=False)
+async def debug_raw_data(
+    db: AsyncSession = Depends(get_async_db),
+    current_user: UserDB = Depends(get_current_user_required)
+):
+    """
+    Debug endpoint to inspect raw data structure
+    """
+    try:
+        raw_extractions = await get_raw_extractions(get_user_id(current_user), db)
+        
+        debug_info = {
+            "total_records": len(raw_extractions),
+            "sample_records": []
+        }
+        
+        # Show first 3 records for inspection
+        for i, record in enumerate(raw_extractions[:3]):
+            debug_record = {
+                "record_index": i,
+                "record_keys": list(record.keys()),
+                "source_pdf": record.get('source_pdf'),
+                "raw_data_type": type(record.get('raw_data', {})).__name__,
+                "raw_data_keys": list(record.get('raw_data', {}).keys()) if isinstance(record.get('raw_data'), dict) else "Not a dict",
+                "raw_data_sample": record.get('raw_data', {})
+            }
+            debug_info["sample_records"].append(debug_record)
+        
+        return debug_info
+    except Exception as e:
+        logger.error(f"Error in debug endpoint: {str(e)}")
+        return {"error": str(e)}
 

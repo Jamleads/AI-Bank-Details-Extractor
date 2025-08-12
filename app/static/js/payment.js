@@ -74,7 +74,7 @@ function updatePricingUI(pricingData) {
         }
 
         // Create card content
-        let buttonText = tier === 'free' ? 'Start Free' : 'Buy Now';
+        let buttonText = tier === 'free' ? 'Get Started' : 'Learn More';
         let priceDisplay = tier === 'free' ? 'Free' : `$${tierData.price}`;
 
         card.innerHTML = `
@@ -102,11 +102,27 @@ function updatePricingUI(pricingData) {
  */
 async function initiatePayment(tier) {
     try {
+        // Track the pricing action first
+        await trackPricingAction(tier);
+
         // Show loading state
-        showLoadingOverlay('Processing your request...');
+        showLoadingOverlay('Processing your payment...');
 
-        console.log(`Initiating payment for tier: ${tier}`);
+        console.log(`Pricing action tracked for tier: ${tier}`);
 
+        // Wait a moment to show the loading state
+        await new Promise(resolve => setTimeout(resolve, 1000));
+
+        // Hide loading overlay
+        hideLoadingOverlay();
+
+        // Show a message instead of processing payment
+        showNotification(`Congrats the ${tier} plan is now yours!`);
+
+        // console.log('Pricing tracking completed - payment processing disabled');
+
+        // Optional: You can uncomment the lines below if you want to enable actual payment processing later
+        /*
         // Call API to initiate payment
         const response = await fetch('/api/payment/initiate', {
             method: 'POST',
@@ -130,9 +146,6 @@ async function initiatePayment(tier) {
         const paymentData = await response.json();
         console.log('Payment data received:', paymentData);
 
-        // Hide loading overlay
-        hideLoadingOverlay();
-
         // Handle payment based on status
         if (paymentData.status === 'completed') {
             // Free tier or already completed payment
@@ -151,10 +164,50 @@ async function initiatePayment(tier) {
         } else {
             throw new Error('No checkout URL provided');
         }
+        */
     } catch (error) {
         hideLoadingOverlay();
-        console.error('Payment initiation error:', error);
-        showNotification(error.message || 'Failed to initiate payment. Please try again.', 'error');
+        console.error('Pricing tracking error:', error);
+        showNotification('Thank you for your interest! We\'ve recorded your preference.', 'success');
+    }
+}
+
+/**
+ * Track pricing card click action
+ */
+async function trackPricingAction(tier) {
+    try {
+        // Get pricing information to find the price for this tier
+        const pricingResponse = await fetch('/api/payment/pricing');
+        if (!pricingResponse.ok) {
+            console.warn('Failed to fetch pricing for tracking');
+            return;
+        }
+
+        const pricingData = await pricingResponse.json();
+        const tierData = pricingData[tier.toLowerCase()];
+        const price = tierData ? tierData.price : 0;
+
+        // Send tracking data to API
+        const trackingResponse = await fetch('/api/pricing/pricing-actions/track', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                pricing_tier: tier.toUpperCase(),
+                price: price
+            })
+        });
+
+        if (trackingResponse.ok) {
+            console.log(`Pricing action tracked: ${tier.toUpperCase()} - $${price}`);
+        } else {
+            console.warn('Failed to track pricing action');
+        }
+    } catch (error) {
+        console.warn('Error tracking pricing action:', error);
+        // Don't block the payment flow if tracking fails
     }
 }
 

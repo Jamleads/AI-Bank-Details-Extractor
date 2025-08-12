@@ -8,6 +8,9 @@ let processedResults = [];
 let rawExtractions = [];
 let structuredRecords = [];
 
+// Global variable to store current header configuration
+let currentHeaderConfig = null;
+
 // Initialize page
 document.addEventListener('DOMContentLoaded', function () {
     console.log("DOM content loaded, initializing page");
@@ -718,6 +721,7 @@ async function updateSessionStatus() {
 function updateExtractionResults() {
     const resultsPlaceholder = document.getElementById('resultsPlaceholder');
     const resultsTableContainer = document.getElementById('resultsTableContainer');
+    const resultsTableHead = document.getElementById('resultsTableHead');
     const resultsTableBody = document.getElementById('resultsTableBody');
     const exportSection = document.getElementById('exportSection');
 
@@ -730,21 +734,67 @@ function updateExtractionResults() {
         return;
     }
 
-    if (resultsTableBody) {
-        resultsTableBody.innerHTML = '';
+    // Get field names to use (custom headers if available, otherwise generate from field name)
+    function getFieldDisplayName(field) {
+        if (currentHeaderConfig && currentHeaderConfig.header_mappings && currentHeaderConfig.header_mappings[field]) {
+            return currentHeaderConfig.header_mappings[field];
+        }
+        // Convert field name to readable format (snake_case to Title Case)
+        return field.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
+    }
+
+    // Analyze data to find which fields have values
+    const fieldsWithData = new Set();
+    records.forEach(record => {
+        Object.keys(record).forEach(key => {
+            const value = record[key];
+            // Less strict filtering - only exclude truly empty values
+            if (value !== null && value !== undefined && value !== '') {
+                fieldsWithData.add(key);
+            }
+        });
+    });
+
+    // Convert to array and sort alphabetically for consistent display
+    const sortedFields = Array.from(fieldsWithData).sort();
+
+    // Clear previous results
+    if (resultsTableHead) resultsTableHead.innerHTML = '';
+    if (resultsTableBody) resultsTableBody.innerHTML = '';
+
+    // Create dynamic table headers and rows
+    if (sortedFields.length > 0 && resultsTableHead && resultsTableBody) {
+        const headerRow = document.createElement('tr');
+        sortedFields.forEach(field => {
+            const th = document.createElement('th');
+            th.textContent = getFieldDisplayName(field);
+            th.setAttribute('data-field', field); // Store field name for reference
+            headerRow.appendChild(th);
+        });
+        resultsTableHead.appendChild(headerRow);
+
+        // Add rows for each record
         records.forEach(record => {
             const row = document.createElement('tr');
-            row.innerHTML = `
-                <td>${record.source_pdf || 'Unknown'}</td>
-                <td>${record.bank_name || 'N/A'}</td>
-                <td>${record.account_name || 'N/A'}</td>
-                <td>${record.account_number || 'N/A'}</td>
-                <td>${record.sort_code || 'N/A'}</td>
-                <td>${record.iban || 'N/A'}</td>
-                <td>${record.swift_code || 'N/A'}</td>
-                <td>${record.routing_number || 'N/A'}</td>
-                <td>${record.bsb_code || 'N/A'}</td>
-            `;
+            sortedFields.forEach(field => {
+                const td = document.createElement('td');
+                const value = record[field];
+
+                // Format the value appropriately
+                if (value === null || value === undefined || value === '') {
+                    td.textContent = '-';
+                    td.className = 'empty-value';
+                } else if (field === 'other_details' && typeof value === 'object') {
+                    // Handle JSON objects in other_details
+                    td.textContent = JSON.stringify(value, null, 2);
+                    td.className = 'json-data';
+                } else {
+                    // Display the actual value
+                    td.textContent = String(value);
+                }
+
+                row.appendChild(td);
+            });
             resultsTableBody.appendChild(row);
         });
     }

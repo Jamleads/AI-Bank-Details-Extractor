@@ -272,5 +272,22 @@ class DatabaseAdapter:
         """Set all API keys for a user to inactive"""
         return self._db_provider.set_inactive_on_user_id(user_id)
 
+    # Pricing Actions operations
+    def create_pricing_action(self, action_data: Dict[str, Any]) -> Dict[str, Any]:
+        """Create a new pricing action record"""
+        return self._db_provider.create_pricing_action(action_data)
+
+    def get_pricing_actions_by_user(self, user_id: str) -> List[Dict[str, Any]]:
+        """Get all pricing actions for a user"""
+        return self._db_provider.get_pricing_actions_by_user(user_id)
+
+    def get_all_pricing_actions(self, limit: int = 100) -> List[Dict[str, Any]]:
+        """Get all pricing actions across all users"""
+        return self._db_provider.get_all_pricing_actions(limit)
+
+    def get_pricing_actions_stats(self) -> Dict[str, Any]:
+        """Get pricing actions statistics"""
+        return self._db_provider.get_pricing_actions_stats()
+
 # Create a singleton instance
 db = DatabaseAdapter()

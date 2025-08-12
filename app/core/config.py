@@ -89,6 +89,7 @@ class Settings:
         self.PAYMENTS_TABLE_NAME = os.environ.get("PAYMENTS_TABLE_NAME", "payments")
         self.USER_CREDENTIALS_TABLE_NAME = os.environ.get("USER_CREDENTIALS_TABLE_NAME", "user-credentials")
         self.API_KEYS_TABLE_NAME = os.environ.get("API_KEYS_TABLE_NAME", "api-keys")
+        self.PRICING_ACTIONS_TABLE_NAME = os.environ.get("PRICING_ACTIONS_TABLE_NAME", "pricing-actions")
 
         # DynamoDB Index Names
         self.EMAIL_INDEX_NAME = os.environ.get("EMAIL_INDEX_NAME", "email-index")
