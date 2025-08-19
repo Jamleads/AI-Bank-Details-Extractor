@@ -170,7 +170,7 @@ class S3Service:
     
     def generate_presigned_url(self, user_id: str, expiration: int = 360) -> Optional[str]:
         """
-        Generate a presigned URL for uploading a file
+        Generate a presigned URL for uploading a file (legacy method)
         
         Args:
             user_id: The user ID to include in the file key
@@ -194,6 +194,54 @@ class S3Service:
             return url
         except Exception as e:
             logger.error(f"Error generating presigned upload URL: {str(e)}")
+            return None
+    
+    def generate_presigned_url_with_metadata(
+        self, 
+        user_id: str, 
+        filename: str,
+        content_type: str,
+        expiration: int = 3600
+    ) -> Optional[Dict[str, str]]:
+        """
+        Generate a presigned URL for uploading a specific file with metadata
+        
+        Args:
+            user_id: The user ID to include in the file key
+            filename: Original filename
+            content_type: MIME type of the file
+            expiration: URL expiration time in seconds (default: 1 hour)
+            
+        Returns:
+            Dict with presigned_url, file_key, and metadata or None if generation failed
+        """
+        try:
+            # Generate file extension from filename
+            file_extension = os.path.splitext(filename)[1] if '.' in filename else ''
+            
+            # Generate unique file key with extension
+            unique_filename = f"{uuid.uuid4()}{file_extension}"
+            file_key = f"uploads/{user_id}/{unique_filename}"
+            
+            # Generate presigned URL
+            url = self.s3.generate_presigned_url(
+                'put_object',
+                Params={
+                    'Bucket': self.bucket_name,
+                    'Key': file_key,
+                    'ContentType': content_type
+                },
+                ExpiresIn=expiration
+            )
+            
+            return {
+                'presigned_url': url,
+                'file_key': file_key,
+                'content_type': content_type,
+                'original_filename': filename
+            }
+        except Exception as e:
+            logger.error(f"Error generating presigned upload URL with metadata: {str(e)}")
             return None
     
     def check_file_exists(self, file_key: str) -> bool:

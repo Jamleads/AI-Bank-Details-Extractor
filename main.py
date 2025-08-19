@@ -34,8 +34,7 @@ logging.basicConfig(
     level=logging.DEBUG,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     handlers=[
-        logging.FileHandler("app.log"),
-        logging.StreamHandler()
+        logging.StreamHandler()  # Only use StreamHandler for CloudWatch logs
     ]
 )
 
@@ -123,7 +122,7 @@ app = FastAPI(
 To authenticate your API requests, include your API key in the `X-API-Key` header with every request:
 
 ```bash
-curl -X POST "https://your-domain.com/api/extract" \\
+curl -X POST "https://your-domain.com/api/extract-new" \\
   -H "X-API-Key: YOUR_API_KEY" \\
   -F "files=@/path/to/your/invoice.pdf"
 ```
@@ -157,11 +156,19 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Mount static files
+# Mount static files - clean paths with custom domain
 app.mount("/static", StaticFiles(directory="app/static"), name="static")
 
 # Templates
 templates = Jinja2Templates(directory="app/templates")
+
+# Add custom template function for static URLs with API Gateway support
+def static_url(request: Request, path: str) -> str:
+    """Generate static URL with proper API Gateway stage prefix"""
+    return f"/static/{path}"
+
+# Make the function available in templates
+templates.env.globals["static_url"] = static_url
 
 # Include API routes
 app.include_router(api_router)

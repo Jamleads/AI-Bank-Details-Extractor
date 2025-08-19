@@ -29,7 +29,10 @@ class DatabaseAdapter:
         if self.db_type == "sqlite":
             from app.db.database import get_db
             self._db_provider = get_db
-        else:
+        elif self.db_type == "firestore":
+            from app.db.firestore import firestore_service
+            self._db_provider = firestore_service
+        else:  # default to dynamodb
             from app.db.dynamodb import dynamodb_service
             self._db_provider = dynamodb_service
 
@@ -239,14 +242,14 @@ class DatabaseAdapter:
                 user_id = str(user_id)
             return dynamodb_service.get_user_credentials(user_id, credential_type)
         else:
-            # Convert user_id to string for DynamoDB
+            # Convert user_id to string for DynamoDB/Firestore
             if isinstance(user_id, int):
                 user_id = str(user_id)
             return self._db_provider.get_user_credentials(user_id, credential_type)
 
     def delete_user_credentials(self, user_id: Union[int, str], credential_type: str):
         """Delete user credentials"""
-        # Convert user_id to string for DynamoDB
+        # Convert user_id to string for DynamoDB/Firestore
         if isinstance(user_id, int):
             user_id = str(user_id)
         return self._db_provider.delete_user_credentials(user_id, credential_type)

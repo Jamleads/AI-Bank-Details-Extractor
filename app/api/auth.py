@@ -26,8 +26,12 @@ async def login(request: Request):
     """
     Login route - redirects to Google OAuth
     """
-    # Create redirect URI for callback
-    redirect_uri = request.url_for("auth_callback")
+    # Create redirect URI for callback - force HTTPS for production
+    base_url = str(request.base_url).rstrip('/')
+    # Force HTTPS for production/Cloud Run deployments
+    if base_url.startswith('http://') and 'run.app' in base_url:
+        base_url = base_url.replace('http://', 'https://')
+    redirect_uri = f"{base_url}/auth/callback"
     logger.debug(f"OAuth redirect URI: {redirect_uri}")
     
     # Redirect to Google OAuth
@@ -77,7 +81,7 @@ async def auth_callback(request: Request, db: AsyncSession = Depends(get_async_d
             expires_delta=timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
         )
         
-        # Create response with cookie
+        # Create response with cookie - redirect to root
         response = RedirectResponse(url="/", status_code=status.HTTP_302_FOUND)
         response.set_cookie(
             key="access_token",
@@ -85,7 +89,8 @@ async def auth_callback(request: Request, db: AsyncSession = Depends(get_async_d
             httponly=True,
             max_age=settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60,
             samesite="lax",
-            secure=settings.PRODUCTION  # Only secure in production
+            secure=settings.PRODUCTION,  # Only secure in production
+            path="/"  # Ensure cookie is available for all paths
         )
         
         logger.debug(f"OAuth login successful for user: {user_email}")
@@ -101,12 +106,12 @@ async def auth_callback(request: Request, db: AsyncSession = Depends(get_async_d
 
 
 @router.get("/logout")
-async def logout():
+async def logout(request: Request):
     """
     Logout route - clears auth cookie
     """
     response = RedirectResponse(url="/login")
-    response.delete_cookie(key="access_token")
+    response.delete_cookie(key="access_token", path="/")
     return response
 
 
@@ -124,7 +129,7 @@ async def get_token(current_user = Depends(get_current_user_required)):
     Get a new token for API access
     """
     # Handle both object and dictionary access
-    user_email = current_user["email"] if isinstance(current_user, dict) else current_user.email
+    user_email = current_user["email"] if isinstance(current_user, dict) else current_user["email"]
     
     access_token = create_access_token(
         data={"sub": user_email},

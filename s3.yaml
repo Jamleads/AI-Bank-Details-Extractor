@@ -25,6 +25,20 @@ Resources:
               SSEAlgorithm: AES256
       AccelerateConfiguration:
         AccelerationStatus: !Ref AccelerationStatus
+      CorsConfiguration:
+        CorsRules:
+          - AllowedHeaders:
+              - "*"
+            AllowedMethods:
+              - GET
+              - PUT
+              - POST
+              - HEAD
+            AllowedOrigins:
+              - "*"
+            ExposedHeaders:
+              - ETag
+            MaxAge: 3600
       LifecycleConfiguration:
         Rules:
           - Id: AutoDeleteAfterOneDay

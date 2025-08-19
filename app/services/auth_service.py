@@ -35,11 +35,12 @@ oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token", auto_error=False)
 
 api_key_routes = [
     "/api/session-status",
-    "/api/extract",
+    "/api/extract-new",
     "/api/header-config/default-headers",
     "/api/header-config",
     "/api/header-config/",
     "/api/user/presigned-urls",
+    "/api/request-presigned-urls",
 ]
 
 DYNAMIC_ROUTE_PATTERNS = [
@@ -202,7 +203,6 @@ async def get_current_user_required(
     Raises:
         HTTPException: If user is not authenticated
     """
-    print(f"\n\n\n\n\n\nRequest: {request.headers.get("X-API-KEY")} path: {request.url.path}\n\n\n\n\n\n")
     if request.headers.get("X-API-KEY") and is_api_key_route(request.url.path):
         user = await get_user_from_api_key(request.headers.get("X-API-KEY"))
         if user:

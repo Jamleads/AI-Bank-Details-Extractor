@@ -1,4 +1,4 @@
-.PHONY: help setup-env start-db stop-db check-db init-db start-app start-all clean test-dynamodb migrate-credentials test-credentials run-aws create-secrets check-aws
+.PHONY: help setup-env start-db stop-db check-db init-db start-app start-all clean test-dynamodb migrate-credentials test-credentials run create-secrets check-aws
 
 # Default target
 help:
@@ -13,7 +13,7 @@ help:
 	@echo "  make test-dynamodb    - Run tests for DynamoDB functions"
 	@echo "  make test-credentials - Test credentials storage in DynamoDB"
 	@echo "  make migrate-credentials - Migrate credentials from files to database"
-	@echo "  make run-aws          - Run app with AWS services"
+	@echo "  make run          - Run app with AWS services"
 	@echo "  make create-secrets   - Create secrets in AWS Secrets Manager"
 	@echo "  make check-aws        - Check AWS connectivity and permissions"
 	@echo "  make clean            - Remove virtual environment and Docker volumes"
@@ -102,15 +102,19 @@ check-aws:
 	. venv/bin/activate && AWS_REGION=$(AWS_REGION) python scripts/check_aws.py
 
 # Run application with AWS services
-run-aws:
+run:
 	@echo "Running application with AWS services..."
 	@echo "Using AWS Secrets Manager for sensitive settings"
 	. venv/bin/activate && \
 	AWS_REGION=$(AWS_REGION) \
-	DATABASE_TYPE=dynamodb \
-	USE_AWS_SECRETS=true \
+	DATABASE_TYPE=firestore \
+	USE_AWS_SECRETS=false \
 	AWS_SECRETS_NAME=ai-bank \
+	USE_GCP_SECRETS=true \
+	GCP_SECRETS_NAME=ai-bank \
+	GCP_PROJECT_ID=deploy-bank-app \
 	S3_EVENTS_BUCKET=event-bucket-eventss3bucket-kg2tgn26qcmq \
+	GCS_BUCKET=event-bucket-weirds \
 	DEBUG=true \
 	USERS_TABLE_NAME=users \
 	HEADER_CONFIGS_TABLE_NAME=header-configs \

@@ -182,8 +182,8 @@ class GeminiService:
                 
                 # Extract supported files (PDF, PNG, JPG, JPEG, WebP)
                 for file_info in zf.infolist():
-                    # Skip directories and hidden files
-                    if file_info.filename.endswith('/') or file_info.filename.startswith('__MACOSX') or file_info.filename.startswith('.'):
+                    # Skip directories and system files
+                    if file_info.filename.endswith('/') or self._is_system_file(file_info.filename):
                         continue
                     
                     # Get file extension
@@ -227,6 +227,67 @@ class GeminiService:
             logger.error(f"Error validating ZIP: {str(e)}")
             logger.error(traceback.format_exc())
             return []
+    
+    def _is_system_file(self, file_path: str) -> bool:
+        """
+        Check if a file is a system file that should be ignored
+        
+        Args:
+            file_path: The file path to check
+            
+        Returns:
+            True if it's a system file, False otherwise
+        """
+        system_patterns = [
+            # macOS system files
+            '__MACOSX',
+            '.DS_Store',
+            '._.DS_Store',
+            '._',
+            '.fseventsd',
+            '.Spotlight-V100',
+            '.TemporaryItems',
+            '.Trashes',
+            '.VolumeIcon.icns',
+            '.com.apple.',
+            
+            # Windows system files
+            'Thumbs.db',
+            'ehthumbs.db',
+            'Desktop.ini',
+            '$RECYCLE.BIN',
+            'System Volume Information',
+            
+            # Linux system files
+            '.directory',
+            '.trash',
+            
+            # General hidden files and directories
+            '.git',
+            '.svn',
+            '.hg',
+            'node_modules',
+            '.env'
+        ]
+        
+        # Convert to lowercase for case-insensitive matching
+        path_lower = file_path.lower()
+        
+        # Check if the path contains any system patterns
+        for pattern in system_patterns:
+            if pattern.lower() in path_lower:
+                return True
+        
+        # Check if it's a hidden file (starts with .)
+        file_name = file_path.split('/')[-1]
+        if file_name.startswith('.'):
+            return True
+        
+        # Check if it's in a hidden directory
+        if '/.' in file_path:
+            return True
+        
+        return False
     
     def extract_bank_details(self, file_data: bytes, file_ext: str = '.pdf', header_config: Optional[HeaderConfig] = None) -> Dict[str, Any]:
         """

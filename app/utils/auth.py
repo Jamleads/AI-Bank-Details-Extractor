@@ -30,4 +30,4 @@ def get_user_email(current_user):
     if isinstance(current_user, dict):
         return current_user.get('email')
     else:
-        return current_user.email 
+        return current_user["email"] 

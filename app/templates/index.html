@@ -211,7 +211,7 @@
 {% endblock %}
 
 {% block extra_js %}
-<script src="{{ url_for('static', path='js/main.js') }}"></script>
+<script src="/static/js/main.js"></script>
 <script>
     // Check for auth token in meta tag
     document.addEventListener('DOMContentLoaded', function () {
@@ -242,7 +242,9 @@
             .then(response => {
                 console.log('Ad API response status:', response.status);
                 if (!response.ok) {
-                    if (response.status !== 404) {
+                    if (response.status === 404) {
+                        console.log('No advertisements available (404)');
+                    } else {
                         console.error('Error loading advertisement:', response.status);
                     }
                     return null;
@@ -790,7 +792,7 @@
 
         function loadHeaderConfigurations() {
             // Load header configurations from API
-            fetch('/api/header-config', {
+            fetch('/api/header-config/', {
                 headers: {
                     'Authorization': `Bearer ${authToken}`
                 }

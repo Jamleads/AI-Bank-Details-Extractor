@@ -9,6 +9,7 @@ import logging
 import json
 import os
 import tempfile
+import uuid
 from typing import List, Dict, Any, Optional, Union
 from fastapi import APIRouter, Depends, File, UploadFile, HTTPException, Request, BackgroundTasks, Form
 from fastapi.responses import FileResponse, StreamingResponse
@@ -18,9 +19,9 @@ from app.db.database import get_async_db
 from app.models.user import UserDB
 from app.models.bank_details import BankDetail
 from app.models.response import ProcessResponse, SessionStatus
-from app.models.file_upload import FileUploads
+from app.models.file_upload import FileUploads, FileUploadRequest, PresignedUrlResponse, PresignedUrlsResponse, S3FileReference, ExtractRequest, ProcessFileRequest
 from app.services.gemini_service import GeminiService
-from app.services.s3_service import S3Service
+from app.services.storage_adapter import storage
 from app.utils.auth import get_current_user_required, get_user_id
 from app.utils.file import generate_csv_file, generate_json_file
 from app.services.header_config_service import apply_header_mapping
@@ -34,7 +35,7 @@ from app.db.operations import (
 from app.db.header_config import get_header_config, ensure_default_config
 from datetime import datetime
 from app.core.admin_config import is_admin_email
-from app.db.dynamodb import DynamoDBService
+from app.db.adapter import db
 from fastapi.responses import RedirectResponse, HTMLResponse
 from fastapi.templating import Jinja2Templates
 
@@ -102,8 +103,8 @@ async def extract_zip_files(zip_data: bytes) -> List[Dict[str, Any]]:
             
             # Extract supported files
             for file_info in zf.infolist():
-                # Skip directories and hidden files
-                if file_info.filename.endswith('/') or file_info.filename.startswith('__MACOSX') or file_info.filename.startswith('.'):
+                # Skip directories and system files
+                if file_info.filename.endswith('/') or is_system_file(file_info.filename):
                     continue
                 
                 # Get file extension
@@ -162,7 +163,7 @@ async def extract_zip_files_async(zip_data: bytes) -> List[Dict[str, Any]]:
 
     return extracted
 
-@router.post("/extract", response_model=ProcessResponse, description="Extract bank details from uploaded files")
+@router.post("/extract", response_model=ProcessResponse, description="Extract bank details from uploaded files", include_in_schema=False)
 async def extract_bank_details(
     files: List[UploadFile] = File(...),
     header_config_id: Optional[str] = Form(None),
@@ -371,8 +372,12 @@ async def get_session_status(
         SessionStatus with current session information
     """
     try:
+        user_id = get_user_id(current_user)
+        logger.debug(f"Getting session status for user_id: {user_id}")
+        
         # Get raw extractions
-        raw_extractions = await get_raw_extractions(get_user_id(current_user), db)
+        raw_extractions = await get_raw_extractions(user_id, db)
+        logger.debug(f"Found {len(raw_extractions)} raw extraction records")
         
         # Debug: Log the structure of the first record
         if raw_extractions:
@@ -453,6 +458,68 @@ async def clear_session(
 
 
 # Function to remove temporary file
+def is_system_file(file_path: str) -> bool:
+    """
+    Check if a file is a system file that should be ignored
+    
+    Args:
+        file_path: The file path to check
+        
+    Returns:
+        True if it's a system file, False otherwise
+    """
+    system_patterns = [
+        # macOS system files
+        '__MACOSX',
+        '.DS_Store',
+        '._.DS_Store',
+        '._',
+        '.fseventsd',
+        '.Spotlight-V100',
+        '.TemporaryItems',
+        '.Trashes',
+        '.VolumeIcon.icns',
+        '.com.apple.',
+        
+        # Windows system files
+        'Thumbs.db',
+        'ehthumbs.db',
+        'Desktop.ini',
+        '$RECYCLE.BIN',
+        'System Volume Information',
+        
+        # Linux system files
+        '.directory',
+        '.trash',
+        
+        # General hidden files and directories
+        '.git',
+        '.svn',
+        '.hg',
+        'node_modules',
+        '.env'
+    ]
+    
+    # Convert to lowercase for case-insensitive matching
+    path_lower = file_path.lower()
+    
+    # Check if the path contains any system patterns
+    for pattern in system_patterns:
+        if pattern.lower() in path_lower:
+            return True
+    
+    # Check if it's a hidden file (starts with .)
+    file_name = file_path.split('/')[-1]
+    if file_name.startswith('.'):
+        return True
+    
+    # Check if it's in a hidden directory
+    if '/.' in file_path:
+        return True
+    
+    return False
+
+
 def remove_temp_file(file_path: str):
     """Remove temporary file after response is sent"""
     try:
@@ -845,8 +912,7 @@ async def get_user_api_keys(
     current_user: UserDB = Depends(get_current_user_required)
 ):
     """Get all API keys for the current user"""
-    dynamodb_service = DynamoDBService()
-    api_keys = dynamodb_service.get_api_keys_by_user(get_user_id(current_user))
+    api_keys = db.get_api_key_by_user_id(get_user_id(current_user))
     return {"api_keys": api_keys}
 
 
@@ -855,8 +921,7 @@ async def create_user_api_key(
     current_user: UserDB = Depends(get_current_user_required)
 ):
     """Create a new API key for the current user"""
-    dynamodb_service = DynamoDBService()
-    api_key = dynamodb_service.create_api_key(get_user_id(current_user))
+    api_key = db.create_api_key(get_user_id(current_user))
     return {"api_key": api_key}
 
 
@@ -867,9 +932,8 @@ async def update_api_key_status(
     current_user: UserDB = Depends(get_current_user_required)
 ):
     """Update API key status (active/inactive)"""
-    dynamodb_service = DynamoDBService()
     # Verify the API key belongs to the current user
-    key_data = dynamodb_service.get_api_key(api_key)
+    key_data = db.get_api_key(api_key)
     if not key_data or key_data.get('user_id') != get_user_id(current_user):
         raise HTTPException(status_code=404, detail="API key not found")
     
@@ -877,25 +941,344 @@ async def update_api_key_status(
     if status not in ['active', 'inactive']:
         raise HTTPException(status_code=400, detail="Invalid status value")
     
-    updated_key = dynamodb_service.update_api_key_status(api_key, status)
+    updated_key = db.update_api_key_status(api_key, status)
     return {"api_key": updated_key} 
 
 
-# endpoint that returns a number presigned urls to the s3 bucket
+# endpoint that returns a number presigned urls to the s3 bucket (legacy)
 @router.get("/user/presigned-urls", include_in_schema=False)
 async def get_presigned_urls(
     filesUploads: FileUploads,
     current_user: UserDB = Depends(get_current_user_required),
 ):
-    """Get presigned URLs for the current user"""
-    s3_service = S3Service()
+    """Get presigned URLs for the current user (legacy)"""
     presigned_urls = []
     # save the presigned urls to the database
     for file_upload in filesUploads.file_uploads:
-        presigned_url = s3_service.generate_presigned_url(get_user_id(current_user))
+        presigned_url = storage.generate_presigned_url(get_user_id(current_user))
         presigned_urls.append(presigned_url)
     
     return {"presigned_urls": presigned_urls}
+
+
+@router.post("/request-presigned-urls", response_model=PresignedUrlsResponse, description="Request presigned URLs for file uploads with validation")
+async def request_presigned_urls(
+    file_requests: List[FileUploadRequest],
+    current_user: UserDB = Depends(get_current_user_required)
+):
+    """
+    Generate presigned URLs for file uploads with validation
+    
+    Args:
+        file_requests: List of file upload requests with metadata
+        current_user: Current authenticated user
+        
+    Returns:
+        Dict containing presigned URL data for each file
+    """
+    try:
+        logger.debug(f"Request presigned URLs for {len(file_requests)} files")
+        
+        # Validate file limits
+        if len(file_requests) > 10:
+            raise HTTPException(status_code=400, detail="Maximum 10 files allowed")
+        
+        if not file_requests:
+            raise HTTPException(status_code=400, detail="No files specified")
+        
+        # Check for ZIP file restrictions
+        zip_files = [f for f in file_requests if f.filename.lower().endswith('.zip')]
+        if zip_files:
+            if len(zip_files) > 1 or len(file_requests) > 1:
+                raise HTTPException(
+                    status_code=400, 
+                    detail="Only one ZIP file allowed, no other files can be selected with ZIP"
+                )
+        
+        # Validate file types
+        allowed_extensions = ['.pdf', '.png', '.jpg', '.jpeg', '.webp', '.zip']
+        for file_req in file_requests:
+            file_ext = os.path.splitext(file_req.filename)[1].lower()
+            if file_ext not in allowed_extensions:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Unsupported file type: {file_ext}. Allowed: {', '.join(allowed_extensions)}"
+                )
+        
+        # Generate presigned URLs
+        user_id = str(get_user_id(current_user))
+        presigned_data = []
+        
+        for file_req in file_requests:
+            # Generate presigned URL with metadata
+            url_data = storage.generate_presigned_url_with_metadata(
+                user_id=user_id,
+                filename=file_req.filename,
+                content_type=file_req.content_type,
+                expiration=3600  # 1 hour
+            )
+            
+            if not url_data:
+                raise HTTPException(
+                    status_code=500,
+                    detail=f"Failed to generate presigned URL for {file_req.filename}"
+                )
+            
+            presigned_data.append(PresignedUrlResponse(
+                file_id=str(uuid.uuid4()),
+                filename=file_req.filename,
+                presigned_url=url_data['presigned_url'],
+                file_key=url_data['file_key'],
+                content_type=file_req.content_type
+            ))
+        
+        logger.debug(f"Generated {len(presigned_data)} presigned URLs successfully")
+        return PresignedUrlsResponse(presigned_urls=presigned_data)
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error generating presigned URLs: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/process", description="Process a single file from S3", include_in_schema=False)
+async def process_single_file(
+    process_request: ProcessFileRequest,
+    gemini_service: GeminiService = Depends(get_gemini_service),
+    db: AsyncSession = Depends(get_async_db),
+    current_user: UserDB = Depends(get_current_user_required)
+):
+    """
+    Process a single file from S3 (for cloud concurrent processing)
+    
+    Args:
+        process_request: File processing request with S3 reference
+        gemini_service: Gemini AI service
+        db: Database session
+        current_user: Current authenticated user
+        
+    Returns:
+        Processing result with success/error status
+    """
+    try:
+        logger.debug(f"Processing single file: {process_request.file_ref.filename}")
+        
+        # Using storage adapter instead of direct S3Service
+        user_id = get_user_id(current_user)
+        file_ref = process_request.file_ref
+        
+        # Download file from cloud storage
+        download_result = storage.download_file(file_ref.file_key)
+        if not download_result:
+            raise HTTPException(
+                status_code=404, 
+                detail=f"File not found in S3: {file_ref.file_key}"
+            )
+        
+        file_data, content_type = download_result
+        
+        # Get header configuration if provided
+        header_config = None
+        if process_request.header_config_id:
+            header_config = await get_header_config(
+                process_request.header_config_id, 
+                user_id, 
+                db
+            )
+        
+        # Determine file extension
+        file_ext = os.path.splitext(file_ref.filename)[1].lower()
+        
+        # Extract bank details using Gemini
+        json_data = await gemini_service.extract_bank_details_async(
+            file_data, file_ext, header_config
+        )
+        
+        # Save raw extraction data
+        raw_result = await save_raw_extraction(user_id, file_ref.filename, json_data)
+        if not raw_result.get('success', False):
+            logger.warning(f"Failed to save raw extraction data for {file_ref.filename}: {raw_result.get('error')}")
+        
+        # Clean up cloud storage file after processing
+        cleanup_success = storage.delete_file(file_ref.file_key)
+        if not cleanup_success:
+            logger.warning(f"Failed to clean up cloud storage file: {file_ref.file_key}")
+        
+        logger.debug(f"Successfully processed file: {file_ref.filename}")
+        return {
+            "success": True,
+            "file_id": file_ref.file_id,
+            "filename": file_ref.filename,
+            "raw_data": json_data
+        }
+        
+    except HTTPException as he:
+        logger.error(f"HTTP Exception processing file {process_request.file_ref.filename}: {str(he)}")
+        return {
+            "success": False,
+            "file_id": process_request.file_ref.file_id,
+            "filename": process_request.file_ref.filename,
+            "error": he.detail
+        }
+    except Exception as e:
+        logger.error(f"Error processing file {process_request.file_ref.filename}: {str(e)}")
+        logger.error(traceback.format_exc())
+        return {
+            "success": False,
+            "file_id": process_request.file_ref.file_id,
+            "filename": process_request.file_ref.filename,
+            "error": f"Processing error: {str(e)}"
+        }
+
+
+@router.post("/extract-new", response_model=ProcessResponse, description="Extract bank details from S3-uploaded files")
+async def extract_bank_details_new(
+    extract_request: ExtractRequest,
+    db: AsyncSession = Depends(get_async_db),
+    current_user: UserDB = Depends(get_current_user_required)
+):
+    """
+    Extract bank details from S3-uploaded files using new architecture
+    
+    Args:
+        extract_request: Request containing S3 file references
+        db: Database session
+        current_user: Current authenticated user
+        
+    Returns:
+        ProcessResponse with operation results
+    """
+    try:
+        logger.debug(f"Extract-new endpoint called with {len(extract_request.files)} files")
+        
+        if not extract_request.files:
+            raise HTTPException(status_code=400, detail="No files provided")
+        
+        # Import environment detection
+        from app.utils.environment import detect_cloud_environment
+        
+        # Detect processing mode
+        user_id = get_user_id(current_user)
+        
+        logger.info(f"Processing {len(extract_request.files)} files in local mode")
+        
+        results = await process_files_locally(extract_request, user_id, db)
+        
+        logger.debug(f"Extract-new endpoint completed: {len(results.results)} successful, {len(results.errors)} errors")
+        return results
+        
+    except HTTPException as he:
+        logger.error(f"HTTP Exception in extract-new endpoint: {str(he)}")
+        raise
+    except Exception as e:
+        logger.error(f"Unhandled exception in extract-new endpoint: {str(e)}")
+        logger.error(traceback.format_exc())
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+async def process_files_locally(
+    extract_request: ExtractRequest,
+    user_id: int,
+    db: AsyncSession
+) -> ProcessResponse:
+    """Process files using local concurrent processing"""
+    
+    logger.debug(f"Processing {len(extract_request.files)} files in local mode")
+    
+    from asyncio import create_task, Semaphore, gather
+    
+    # Lower concurrency for local development
+    MAX_CONCURRENCY = 6
+    sem = Semaphore(MAX_CONCURRENCY)
+    
+    async def process_one_file(file_ref: S3FileReference) -> Dict[str, Any]:
+        """Process a single file with semaphore control"""
+        async with sem:
+            try:
+                # Using storage adapter instead of direct S3Service
+                gemini_service = GeminiService()
+                
+                # Download file from cloud storage
+                download_result = storage.download_file(file_ref.file_key)
+                if not download_result:
+                    return {
+                        "success": False,
+                        "file_id": file_ref.file_id,
+                        "filename": file_ref.filename,
+                        "error": f"File not found in S3: {file_ref.file_key}"
+                    }
+                
+                file_data, content_type = download_result
+                
+                # Get header configuration if provided
+                header_config = None
+                if extract_request.header_config_id:
+                    header_config = await get_header_config(
+                        extract_request.header_config_id, 
+                        user_id, 
+                        db
+                    )
+                
+                # Determine file extension
+                file_ext = os.path.splitext(file_ref.filename)[1].lower()
+                
+                # Extract bank details using Gemini
+                json_data = await gemini_service.extract_bank_details_async(
+                    file_data, file_ext, header_config
+                )
+                
+                # Save raw extraction data
+                raw_result = await save_raw_extraction(user_id, file_ref.filename, json_data)
+                if not raw_result.get('success', False):
+                    logger.warning(f"Failed to save raw extraction data for {file_ref.filename}")
+                
+                # Clean up cloud storage file after processing
+                storage.delete_file(file_ref.file_key)
+                
+                return {
+                    "success": True,
+                    "file_id": file_ref.file_id,
+                    "filename": file_ref.filename,
+                    "raw_data": json_data
+                }
+                
+            except Exception as e:
+                logger.error(f"Error processing file {file_ref.filename}: {str(e)}")
+                return {
+                    "success": False,
+                    "file_id": file_ref.file_id,
+                    "filename": file_ref.filename,
+                    "error": str(e)
+                }
+    
+    # Create tasks for all files
+    tasks = [create_task(process_one_file(file_ref)) for file_ref in extract_request.files]
+    
+    # Execute all tasks concurrently
+    results = await gather(*tasks, return_exceptions=True)
+    
+    # Process results
+    successful_results = []
+    errors = []
+    
+    for result in results:
+        if isinstance(result, Exception):
+            errors.append({"filename": "unknown", "error": str(result)})
+        elif result.get("success"):
+            successful_results.append(result)
+        else:
+            errors.append({
+                "filename": result.get("filename", "unknown"),
+                "error": result.get("error", "Processing failed")
+            })
+    
+    return ProcessResponse(
+        success=len(successful_results) > 0,
+        records_added=len(successful_results),
+        results=successful_results,
+        errors=errors
+    )
 
 
 @router.get("/debug/raw-data", include_in_schema=False)

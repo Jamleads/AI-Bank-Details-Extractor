@@ -1,91 +1,62 @@
 AWSTemplateFormatVersion: '2010-09-09'
 Transform: AWS::Serverless-2016-10-31
-Description: Bank Details Extractor Serverless Application
+Description: AI Bank Details Extractor API
 
 Parameters:
   Stage:
     Type: String
-    Default: dev
-    AllowedValues:
-      - dev
-      - prod
-    Description: Deployment stage
-
-  S3BucketName:
-    Type: String
-    Default: bank-details-extractor-files
-    Description: S3 bucket for file storage
-
-  SecretsName:
-    Type: String
-    Default: ai-bank-extractor
-    Description: Name of the Secrets Manager secret
-
+    Default: $default
+    Description: Stage name for the API ($default provides clean URLs without stage prefix)
+  
 Globals:
   Function:
-    Timeout: 30
-    MemorySize: 512
-    Runtime: python3.9
+    Timeout: 900  # 15 minutes for AI processing
+    MemorySize: 2048  # More memory for better performance
+    Runtime: python3.11
     Environment:
       Variables:
         STAGE: !Ref Stage
         DATABASE_TYPE: dynamodb
-        S3_BUCKET: !Sub "${S3BucketName}-${Stage}"
         USE_AWS_SECRETS: "true"
-        AWS_SECRETS_NAME: !Sub "${SecretsName}-${Stage}"
+        AWS_SECRETS_NAME: ai-bank
         USE_S3_STORAGE: "true"
-        S3_EVENTS_BUCKET: !ImportValue EventsS3Bucket
-        USERS_TABLE_NAME: users
-        HEADER_CONFIGS_TABLE_NAME: header-configs
-        RAW_EXTRACTIONS_TABLE_NAME: raw-extractions
-        PAYMENTS_TABLE_NAME: payments
-        USER_CREDENTIALS_TABLE_NAME: user-credentials
-        API_KEYS_TABLE_NAME: api-keys
+        S3_BUCKET: !ImportValue event-bucket-bucket
+        # DynamoDB Table Names - Import from existing stacks
+        USERS_TABLE_NAME: !ImportValue users-table
+        HEADER_CONFIGS_TABLE_NAME: !ImportValue header-configs-table
+        RAW_EXTRACTIONS_TABLE_NAME: !ImportValue raw-extractions-table
+        PAYMENTS_TABLE_NAME: !ImportValue payments-table
+        USER_CREDENTIALS_TABLE_NAME: !ImportValue user-credentials-table
+        API_KEYS_TABLE_NAME: !ImportValue api-keys-table
+        # DynamoDB Index Names
         EMAIL_INDEX_NAME: email-index
         GOOGLE_ID_INDEX_NAME: google-id-index
         USER_ID_INDEX_NAME: user-id-index
         YATIVO_DEPOSIT_ID_INDEX_NAME: yativo-deposit-id-index
 
 Resources:
-  # Lambda Layer for dependencies
-  DependenciesLayer:
-    Type: AWS::Serverless::LayerVersion
-    Properties:
-      LayerName: !Sub "bank-details-extractor-dependencies-${Stage}"
-      Description: Dependencies for Bank Details Extractor
-      ContentUri: ./layer/
-      CompatibleRuntimes:
-        - python3.9
-      RetentionPolicy: Retain
 
-  # API Gateway
-  ApiGateway:
-    Type: AWS::Serverless::Api
+  # CloudWatch Log Group
+  ApiLogGroup:
+    Type: AWS::Logs::LogGroup
     Properties:
-      StageName: !Ref Stage
-      BinaryMediaTypes:
-        - "multipart/form-data"
-        - "application/octet-stream"
-        - "image/jpeg"
-        - "image/png"
-        - "application/pdf"
-      Cors:
-        AllowMethods: "'GET,POST,PUT,DELETE,OPTIONS'"
-        AllowHeaders: "'Content-Type,Authorization,X-Amz-Date,X-Api-Key,X-Amz-Security-Token,X-API-KEY'"
-        AllowOrigin: "'*'"
-        MaxAge: "'3600'"
+      LogGroupName: !Sub "/aws/lambda/ai-bank-extractor"
+      RetentionInDays: 14
 
-  # Lambda Function
+  # Main Lambda Function
   ApiFunction:
     Type: AWS::Serverless::Function
     Properties:
-      CodeUri: ./
-      Handler: lambda_handler.handler
-      Description: Main API handler for Bank Details Extractor
-      Timeout: 30
-      MemorySize: 1024
-      Layers:
-        - !Ref DependenciesLayer
+      FunctionName: !Sub "ai-bank-extractor"
+      CodeUri: .
+      Handler: lambda_handler.lambda_handler
+      Description: !Sub "AI Bank Details Extractor API"
+      Architectures:
+        - x86_64
+      Timeout: 900
+      MemorySize: 2048
+      LoggingConfig:
+        LogGroup: !Ref ApiLogGroup
       Policies:
         - DynamoDBCrudPolicy:
             TableName: !ImportValue users-table
@@ -97,23 +68,82 @@ Resources:
             TableName: !ImportValue payments-table
         - DynamoDBCrudPolicy:
             TableName: !ImportValue user-credentials-table
+        - DynamoDBCrudPolicy:
+            TableName: !ImportValue api-keys-table
         - S3CrudPolicy:
-            BucketName: !ImportValue EventsS3Bucket
+            BucketName: !ImportValue event-bucket-bucket
+        # Secrets Manager permissions
+        - Statement:
+          - Effect: Allow
+            Action:
+            - secretsmanager:GetSecretValue
+            Resource: "*"
+        # CloudWatch Logs permissions
+        - Version: '2012-10-17'
+          Statement:
+            - Effect: Allow
+              Action:
+                - logs:CreateLogGroup
+                - logs:CreateLogStream
+                - logs:PutLogEvents
+              Resource: !Sub "arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/ai-bank-extractor-${Stage}:*"
       Events:
+        # Catch all API routes
         ApiEvent:
           Type: Api
           Properties:
-            RestApiId: !Ref ApiGateway
             Path: /{proxy+}
             Method: ANY
-        RootPath:
+            RestApiId: !Ref ApiGateway
+        # Root path
+        RootEvent:
           Type: Api
           Properties:
-            RestApiId: !Ref ApiGateway
             Path: /
             Method: ANY
+            RestApiId: !Ref ApiGateway
+
+  # API Gateway
+  ApiGateway:
+    Type: AWS::Serverless::Api
+    Properties:
+      Name: !Sub "ai-bank-extractor-api"
+      StageName: !Ref Stage
+      BinaryMediaTypes:
+        - "multipart/form-data"
+        - "application/octet-stream"
+        - "image/*"
+        - "application/pdf"
+        - "*/*"
+      Cors:
+        AllowMethods: "'GET,POST,PUT,DELETE,OPTIONS'"
+        AllowHeaders: "'Content-Type,Authorization,X-Amz-Date,X-Api-Key,X-Amz-Security-Token,X-API-KEY,Accept,Accept-Encoding,Accept-Language,Cache-Control,Connection,Cookie,Host,Origin,Pragma,Referer,User-Agent'"
+        AllowOrigin: "'*'"
+        MaxAge: "'3600'"
+        AllowCredentials: "'true'"
+      # Enable proper path mapping for clean URLs
+      EndpointConfiguration:
+        Type: REGIONAL
+
+
+  # Lambda permission for API Gateway
+  ApiGatewayInvokePermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref ApiFunction
+      Action: lambda:InvokeFunction
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub "arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${ApiGateway}/*/*"
 
 Outputs:
   ApiUrl:
-    Description: URL of the API Gateway endpoint
+    Description: API Gateway endpoint URL
     Value: !Sub "https://${ApiGateway}.execute-api.${AWS::Region}.amazonaws.com/${Stage}/"
+    Export:
+      Name: !Sub "${AWS::StackName}-ApiUrl"
+
+  LambdaFunctionName:
+    Description: Lambda function name
+    Value: !Ref ApiFunction
+    Export:
+      Name: !Sub "${AWS::StackName}-LambdaFunction"
