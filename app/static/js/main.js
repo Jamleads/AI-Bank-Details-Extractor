@@ -8,6 +8,9 @@ let processedResults = [];
 let rawExtractions = [];
 let structuredRecords = [];
 
+// Global variable to store current header configuration
+let currentHeaderConfig = null;
+
 // Initialize page
 document.addEventListener('DOMContentLoaded', function () {
     console.log("DOM content loaded, initializing page");
@@ -66,6 +69,7 @@ function clearToken() {
 async function checkAuth() {
     // Check if user is authenticated
     const token = getToken();
+    console.log('Debug: Token available:', token);
     if (!token) {
         return false;
     }
@@ -103,18 +107,45 @@ async function checkAuth() {
 }
 
 function initializeApp() {
+    console.log('Debug: initializeApp() called');
+
     // Set up the file upload functionality
     setupFileUpload();
 
     // Set up the export options
     setupExportOptions();
 
-    // Load header configurations
-    loadHeaderConfigurations();
+    // Load header configurations with a small delay to ensure token is ready
+    console.log('Debug: About to call loadHeaderConfigurations() from initializeApp');
+    setTimeout(() => {
+        console.log('Debug: Delayed call to loadHeaderConfigurations()');
+        loadHeaderConfigurations();
+    }, 100);
 
     // Enable clear button
     const clearBtn = document.getElementById('clear-button');
     if (clearBtn) clearBtn.disabled = false;
+
+    // Add Refresh Results handler
+    const refreshBtn = document.getElementById('refreshBtn');
+    if (refreshBtn) {
+        refreshBtn.addEventListener('click', async () => {
+            const original = refreshBtn.innerHTML;
+            try {
+                refreshBtn.disabled = true;
+                refreshBtn.innerHTML = '<i class="fas fa-sync fa-spin"></i> Refreshing...';
+                await updateSessionStatus();
+                updateExtractionResults();
+                showStatusMessage('Results refreshed', 'success');
+            } catch (e) {
+                console.error('Failed to refresh results:', e);
+                showStatusMessage('Failed to refresh results', 'error');
+            } finally {
+                refreshBtn.disabled = false;
+                refreshBtn.innerHTML = original;
+            }
+        });
+    }
 
     // Check session status to load any existing data
     checkSessionStatus();
@@ -173,21 +204,48 @@ function checkDriveAuthStatus() {
 }
 
 // Load header configurations
-async function loadHeaderConfigurations() {
+async function loadHeaderConfigurations(retryCount = 0) {
+    const maxRetries = 3;
+
     try {
+        console.log(`Debug: Starting to load header configurations... (attempt ${retryCount + 1})`);
+
         const token = getToken();
-        const response = await fetch('/api/header-config/', {
+        console.log('Debug: Token available:', !!token);
+
+        if (!token) {
+            if (retryCount < maxRetries) {
+                console.log(`Debug: No token available, retrying in ${(retryCount + 1) * 500}ms...`);
+                setTimeout(() => loadHeaderConfigurations(retryCount + 1), (retryCount + 1) * 500);
+                return;
+            } else {
+                console.error('No authentication token available for header configurations after retries');
+                return;
+            }
+        }
+
+        const url = '/api/header-config/';
+        console.log('Debug: Making request to:', url);
+
+        const response = await fetch(url, {
             headers: {
                 'Authorization': `Bearer ${token}`
             }
         });
 
+        console.log('Debug: Response status:', response.status, response.statusText);
+
         if (response.ok) {
             const configs = await response.json();
+            console.log('Debug: Loaded header configurations:', configs);
+            console.log('Debug: Number of configurations:', configs.length);
 
             // Get both dropdowns
             const exportDropdown = document.getElementById('header-config-dropdown');
             const uploadDropdown = document.getElementById('upload-header-config');
+
+            console.log('Debug: Export dropdown found:', !!exportDropdown);
+            console.log('Debug: Upload dropdown found:', !!uploadDropdown);
 
             // Clear existing options in export dropdown
             if (exportDropdown) {
@@ -205,6 +263,8 @@ async function loadHeaderConfigurations() {
 
             // Add configurations to both dropdowns
             configs.forEach(config => {
+                console.log('Debug: Processing config:', config.name, 'ID:', config.id, 'Default:', config.is_default);
+
                 // For export dropdown
                 if (exportDropdown) {
                     const exportOption = document.createElement('option');
@@ -231,15 +291,57 @@ async function loadHeaderConfigurations() {
                     }
                 }
             });
+
+            console.log('Debug: Upload dropdown final state:',
+                uploadDropdown ? Array.from(uploadDropdown.options).map(opt => ({ value: opt.value, text: opt.textContent })) : 'dropdown not found');
+
+            console.log('Debug: Header configurations loaded successfully');
         } else {
-            console.error('Failed to load header configurations');
+            console.error('Failed to load header configurations. Status:', response.status);
+            const errorText = await response.text();
+            console.error('Error response:', errorText);
         }
     } catch (error) {
         console.error('Error loading header configurations:', error);
+        console.error('Error stack:', error.stack);
     }
 }
 
+// Test function for manual debugging
+window.testHeaderConfigs = async function () {
+    console.log('=== MANUAL HEADER CONFIG TEST ===');
+    console.log('Token available:', !!getToken());
+    console.log('Upload dropdown exists:', !!document.getElementById('upload-header-config'));
+    console.log('Export dropdown exists:', !!document.getElementById('header-config-dropdown'));
+
+    try {
+        await loadHeaderConfigurations();
+        console.log('=== TEST COMPLETED ===');
+    } catch (error) {
+        console.error('=== TEST FAILED ===', error);
+    }
+};
+
+// Test function for process button
+window.testProcessButton = function () {
+    console.log('=== PROCESS BUTTON TEST ===');
+    const button = document.getElementById('processBtn');
+    console.log('Process button exists:', !!button);
+    console.log('Process button disabled:', button ? button.disabled : 'N/A');
+    console.log('Process button innerHTML:', button ? button.innerHTML : 'N/A');
+    console.log('Selected files count:', selectedFiles.length);
+    console.log('Selected files:', selectedFiles);
+
+    if (button) {
+        console.log('Simulating button click...');
+        button.click();
+    }
+    console.log('=== TEST COMPLETED ===');
+};
+
 function setupFileUpload() {
+    console.log('Debug: setupFileUpload() called');
+
     // Get DOM elements
     const fileInput = document.getElementById('fileInput');
     const dropArea = document.getElementById('uploadArea');
@@ -247,10 +349,27 @@ function setupFileUpload() {
     const uploadButton = document.getElementById('processBtn');
     const clearButton = document.getElementById('clear-button');
 
+    console.log('Debug: DOM elements found:', {
+        fileInput: !!fileInput,
+        dropArea: !!dropArea,
+        fileList: !!fileList,
+        uploadButton: !!uploadButton,
+        clearButton: !!clearButton
+    });
+
     if (!dropArea || !fileInput || !fileList || !uploadButton || !clearButton) {
         console.error("Required file upload elements not found");
+        console.error("Missing elements:", {
+            dropArea: !dropArea,
+            fileInput: !fileInput,
+            fileList: !fileList,
+            uploadButton: !uploadButton,
+            clearButton: !clearButton
+        });
         return;
     }
+
+    console.log('Debug: All DOM elements found, setting up event listeners...');
 
     // Prevent default drag behaviors
     ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
@@ -275,13 +394,20 @@ function setupFileUpload() {
 
     // Handle upload button click
     uploadButton.addEventListener('click', function (e) {
+        console.log('Debug: Process button clicked!');
+        console.log('Debug: Selected files count:', selectedFiles.length);
+        console.log('Debug: Selected files:', selectedFiles);
+
         e.preventDefault();
         if (selectedFiles.length > 0) {
+            console.log('Debug: Starting file upload process...');
             // Disable button and show loading state
             this.disabled = true;
             this.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Processing...';
 
             uploadFiles(selectedFiles);
+        } else {
+            console.log('Debug: No files selected, button click ignored');
         }
     });
 
@@ -319,60 +445,220 @@ function setupFileUpload() {
         handleFiles(files);
     }
 
-    function handleFiles(files) {
+    async function handleFiles(files) {
         if (files.length === 0) return;
 
-        // Filter for PDF, image, and ZIP files
+        // File limits configuration
+        const FILE_LIMITS = {
+            MAX_REGULAR_FILES: 10,
+            SUPPORTED_TYPES: ['.pdf', '.png', '.jpg', '.jpeg', '.webp', '.zip']
+        };
+
+        showStatusMessage('Processing files...', 'info');
+
+        try {
+            // Process all files (extract ZIPs)
+            const processedFiles = await processAllFiles(Array.from(files));
+
+            // Validate final count
+            if (selectedFiles.length + processedFiles.length > FILE_LIMITS.MAX_REGULAR_FILES) {
+                throw new Error(`Total files would exceed limit: ${selectedFiles.length + processedFiles.length}/${FILE_LIMITS.MAX_REGULAR_FILES}`);
+            }
+
+            // Add processed files to selection
+            selectedFiles = [...selectedFiles, ...processedFiles];
+
+            // Update UI
+            updateFileList();
+
+            // Show success message
+            const fileCount = processedFiles.length;
+            const fileWord = fileCount === 1 ? 'file' : 'files';
+            showStatusMessage(`${fileCount} ${fileWord} selected and ready to upload`, 'success');
+
+            // Enable upload and clear buttons
+            uploadButton.disabled = false;
+            clearButton.disabled = false;
+
+        } catch (error) {
+            showStatusMessage(`Error processing files: ${error.message}`, 'error');
+        }
+    }
+
+    async function processAllFiles(files) {
+        const processedFiles = [];
+
+        for (const file of files) {
+            if (file.name.toLowerCase().endsWith('.zip')) {
+                showStatusMessage(`Extracting ZIP file: ${file.name}`, 'info');
+                const extractedFiles = await extractZipFile(file);
+                processedFiles.push(...extractedFiles);
+                showStatusMessage(`Extracted ${extractedFiles.length} files from ${file.name}`, 'success');
+            } else {
+                // Validate regular file
+                if (validateSingleFile(file)) {
+                    processedFiles.push(file);
+                }
+            }
+        }
+
+        return processedFiles;
+    }
+
+    async function extractZipFile(zipFile) {
+        try {
+            // Dynamically import JSZip (you'll need to include this library)
+            // For now, we'll use a fallback approach with manual ZIP handling
+
+            if (typeof JSZip === 'undefined') {
+                throw new Error('JSZip library not loaded. Please include JSZip to handle ZIP files.');
+            }
+
+            const zip = new JSZip();
+            const contents = await zip.loadAsync(zipFile);
+
+            const extractedFiles = [];
+            const promises = [];
+
+            contents.forEach((relativePath, zipEntry) => {
+                // Skip directories
+                if (zipEntry.dir) return;
+
+                // Filter out system files and metadata
+                if (isSystemFile(relativePath)) return;
+
+                const ext = '.' + relativePath.split('.').pop().toLowerCase();
+
+                if (['.pdf', '.png', '.jpg', '.jpeg', '.webp'].includes(ext)) {
+                    // Extract file content as blob
+                    const promise = zipEntry.async('blob').then(blob => {
+                        // Clean up the filename (remove directory paths for display)
+                        const cleanFileName = relativePath.split('/').pop() || relativePath;
+
+                        // Create a File object from the blob
+                        const file = new File([blob], cleanFileName, {
+                            type: getContentType(ext)
+                        });
+                        // Mark as extracted for UI display
+                        file.extractedFrom = zipFile.name;
+                        extractedFiles.push(file);
+                    });
+                    promises.push(promise);
+                }
+            });
+
+            await Promise.all(promises);
+
+            if (extractedFiles.length === 0) {
+                throw new Error('ZIP file contains no supported files (PDF, PNG, JPG, JPEG, WebP)');
+            }
+
+            return extractedFiles;
+
+        } catch (error) {
+            console.error('Error extracting ZIP file:', error);
+            throw new Error(`Failed to extract ZIP file: ${error.message}`);
+        }
+    }
+
+    function validateSingleFile(file) {
+        const FILE_LIMITS = {
+            SUPPORTED_TYPES: ['.pdf', '.png', '.jpg', '.jpeg', '.webp']
+        };
+
+        const fileExtension = '.' + file.name.split('.').pop().toLowerCase();
         const allowedTypes = [
             'application/pdf',
             'image/png',
             'image/jpeg',
-            'image/webp',
-            'application/zip'
+            'image/webp'
         ];
-        const allowedExtensions = ['.pdf', '.png', '.jpg', '.jpeg', '.webp', '.zip'];
 
-        // Separate valid and invalid files
-        const validFiles = [];
-        const invalidFiles = [];
+        if (!allowedTypes.includes(file.type) && !FILE_LIMITS.SUPPORTED_TYPES.includes(fileExtension)) {
+            showStatusMessage(`Unsupported file type: ${file.name}. Only PDF, PNG, JPG, JPEG, WebP files are supported.`, 'error');
+            return false;
+        }
 
-        Array.from(files).forEach(file => {
-            const fileExtension = '.' + file.name.split('.').pop().toLowerCase();
-            if (allowedTypes.includes(file.type) || allowedExtensions.includes(fileExtension)) {
-                validFiles.push(file);
-            } else {
-                invalidFiles.push(file);
+        return true;
+    }
+
+    function getContentType(extension) {
+        const mimeTypes = {
+            '.pdf': 'application/pdf',
+            '.png': 'image/png',
+            '.jpg': 'image/jpeg',
+            '.jpeg': 'image/jpeg',
+            '.webp': 'image/webp'
+        };
+        return mimeTypes[extension] || 'application/octet-stream';
+    }
+
+    function isSystemFile(relativePath) {
+        // Filter out system files and metadata from various operating systems
+        const systemPatterns = [
+            // macOS system files
+            '__MACOSX',
+            '.DS_Store',
+            '._.DS_Store',
+            '._',
+            '.fseventsd',
+            '.Spotlight-V100',
+            '.TemporaryItems',
+            '.Trashes',
+            '.VolumeIcon.icns',
+            '.com.apple.',
+
+            // Windows system files
+            'Thumbs.db',
+            'ehthumbs.db',
+            'Desktop.ini',
+            '$RECYCLE.BIN',
+            'System Volume Information',
+
+            // Linux system files
+            '.directory',
+            '.trash',
+
+            // General hidden files and directories
+            '.git',
+            '.svn',
+            '.hg',
+            'node_modules',
+            '.env'
+        ];
+
+        // Convert to lowercase for case-insensitive matching
+        const pathLower = relativePath.toLowerCase();
+
+        // Check if the path contains any system patterns
+        for (const pattern of systemPatterns) {
+            if (pathLower.includes(pattern.toLowerCase())) {
+                return true;
             }
-        });
-
-        // Show message if there are invalid files
-        if (invalidFiles.length > 0) {
-            const invalidFileNames = invalidFiles.map(f => f.name).join(', ');
-            showStatusMessage(`Unsupported file type(s): ${invalidFileNames}. Only PDF, PNG, JPG, JPEG, WebP, and ZIP files are supported.`, 'error');
         }
 
-        if (validFiles.length === 0) {
-            return;
+        // Check if it's a hidden file (starts with .)
+        const fileName = relativePath.split('/').pop() || '';
+        if (fileName.startsWith('.')) {
+            return true;
         }
 
-        // Add to selected files
-        selectedFiles = [...selectedFiles, ...validFiles];
+        // Check if it's in a hidden directory
+        if (relativePath.includes('/.')) {
+            return true;
+        }
 
-        // Update UI
-        updateFileList();
-
-        // Show count of selected files
-        const fileCount = selectedFiles.length;
-        const fileWord = fileCount === 1 ? 'file' : 'files';
-        showStatusMessage(`${fileCount} ${fileWord} selected and ready to upload`, 'info');
-
-        // Enable upload and clear buttons
-        uploadButton.disabled = false;
-        clearButton.disabled = false;
+        return false;
     }
 
     function updateFileList() {
         fileList.innerHTML = '';
+
+        // Show file counter
+        const fileCounter = document.createElement('div');
+        fileCounter.className = 'file-counter';
+        fileCounter.textContent = `${selectedFiles.length}/10 files selected`;
+        fileList.appendChild(fileCounter);
 
         // Show file count if many files
         if (selectedFiles.length > 10) {
@@ -396,10 +682,15 @@ function setupFileUpload() {
                         file.type === 'image/webp' || fileExtension === '.webp' ? 'fa-file-image' :
                             file.type === 'application/zip' || fileExtension === '.zip' ? 'fa-file-archive' : 'fa-file';
 
+            // Display name with ZIP indication
+            const displayName = file.extractedFrom ?
+                `${file.name} <small>(from ${file.extractedFrom})</small>` :
+                file.name;
+
             fileItem.innerHTML = `
                 <div class="file-name">
                     <i class="fas ${fileIcon}"></i>
-                    ${file.name} (${formatFileSize(file.size)})
+                    ${displayName} (${formatFileSize(file.size)})
                 </div>
                 <button type="button" class="file-remove" data-index="${index}">
                     <i class="fas fa-times"></i>
@@ -544,57 +835,38 @@ function formatFileSize(bytes) {
 }
 
 async function uploadFiles(files) {
+    console.log('Debug: uploadFiles() called with files:', files);
+    console.log('Debug: Number of files:', files.length);
+
     showProgressBar(true);
-    showStatusMessage('Uploading and processing files...', 'info');
+    showStatusMessage('Starting upload process...', 'info');
 
     // Get reference to upload button
     const uploadButton = document.getElementById('processBtn');
 
     try {
-        const formData = new FormData();
-        files.forEach(file => {
-            formData.append('files', file);
-        });
+        // Step 1: Request presigned URLs
+        showStatusMessage('Requesting upload URLs...', 'info');
+        const fileMetadata = files.map(file => ({
+            filename: file.name,
+            content_type: file.type || getContentType('.' + file.name.split('.').pop().toLowerCase()),
+            size: file.size
+        }));
 
-        // Add header configuration if selected
-        const headerConfigId = document.getElementById('upload-header-config').value;
-        if (headerConfigId) {
-            formData.append('header_config_id', headerConfigId);
-        }
+        const presignedResponse = await requestPresignedUrls(fileMetadata);
 
-        const token = getToken();
+        // Step 2: Upload files to S3
+        showStatusMessage('Uploading files to S3...', 'info');
+        const uploadResults = await uploadFilesToS3(files, presignedResponse.presigned_urls);
 
-        const response = await fetch('/api/extract', {
-            method: 'POST',
-            body: formData,
-            headers: {
-                'Authorization': `Bearer ${token}`
-            }
-        });
+        // Step 3: Call extract-new endpoint with file references
+        showStatusMessage('Processing files with AI...', 'info');
+        const extractResults = await callExtractNewEndpoint(uploadResults);
 
-        if (!response.ok) {
-            const errorData = await response.json();
-            throw new Error(errorData.detail || `HTTP error! Status: ${response.status}`);
-        }
+        // Step 4: Display results
+        displayResults(extractResults);
 
-        const data = await response.json();
-
-        // Check for errors
-        if (data.errors && data.errors.length > 0) {
-            const errorMessages = data.errors.map(err =>
-                `<li><strong>${err.filename}</strong>: ${err.error}</li>`
-            ).join('');
-
-            if (data.results && data.results.length > 0) {
-                showStatusMessage(`Processed ${data.results.length} records with some errors: <ul>${errorMessages}</ul>`, 'warning');
-            } else {
-                showStatusMessage(`Failed to process files: <ul>${errorMessages}</ul>`, 'error');
-            }
-        } else {
-            showStatusMessage(`Successfully processed ${data.results ? data.results.length : 0} records.`, 'success');
-        }
-
-        // Clear selected files after successful upload
+        // Clear selected files after successful processing
         clearSelectedFiles();
 
         // Update session status to refresh data
@@ -602,17 +874,123 @@ async function uploadFiles(files) {
 
         // Update extraction results display
         updateExtractionResults();
+
     } catch (error) {
-        console.error('Error uploading files:', error);
+        console.error('Error in upload process:', error);
         showStatusMessage(`Error: ${error.message}`, 'error');
     } finally {
         showProgressBar(false);
 
         // Reset button state
         if (uploadButton) {
-            uploadButton.disabled = true; // Keep disabled as clearSelectedFiles() was called
+            uploadButton.disabled = true;
             uploadButton.innerHTML = 'Process Files';
         }
+    }
+}
+
+async function requestPresignedUrls(fileMetadata) {
+    const token = getToken();
+
+    const response = await fetch('/api/request-presigned-urls', {
+        method: 'POST',
+        headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(fileMetadata)
+    });
+
+    if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.detail || `Failed to get upload URLs: ${response.status}`);
+    }
+
+    return await response.json();
+}
+
+async function uploadFilesToS3(files, presignedUrls) {
+    const uploadResults = [];
+
+    for (let i = 0; i < files.length; i++) {
+        const file = files[i];
+        const urlData = presignedUrls[i];
+
+        try {
+            // Upload file to S3 using presigned URL
+            const uploadResponse = await fetch(urlData.presigned_url, {
+                method: 'PUT',
+                body: file,
+                headers: {
+                    'Content-Type': urlData.content_type
+                }
+            });
+
+            if (!uploadResponse.ok) {
+                throw new Error(`Failed to upload ${file.name}: ${uploadResponse.status}`);
+            }
+
+            // Create S3 file reference
+            uploadResults.push({
+                file_id: urlData.file_id,
+                file_key: urlData.file_key,
+                filename: urlData.filename,
+                content_type: urlData.content_type,
+                size: file.size
+            });
+
+            console.log(`Successfully uploaded: ${file.name}`);
+
+        } catch (error) {
+            console.error(`Failed to upload ${file.name}:`, error);
+            throw new Error(`Upload failed for ${file.name}: ${error.message}`);
+        }
+    }
+
+    return uploadResults;
+}
+
+async function callExtractNewEndpoint(uploadResults) {
+    const token = getToken();
+
+    // Get header configuration if selected
+    const headerConfigId = document.getElementById('upload-header-config').value;
+    const extractRequest = {
+        files: uploadResults,
+        header_config_id: headerConfigId && headerConfigId.trim() !== '' ? headerConfigId : null
+    };
+
+    const response = await fetch('/api/extract-new', {
+        method: 'POST',
+        headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(extractRequest)
+    });
+
+    if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.detail || `Extraction failed: ${response.status}`);
+    }
+
+    return await response.json();
+}
+
+function displayResults(extractResults) {
+    // Check for errors
+    if (extractResults.errors && extractResults.errors.length > 0) {
+        const errorMessages = extractResults.errors.map(err =>
+            `<li><strong>${err.filename}</strong>: ${err.error}</li>`
+        ).join('');
+
+        if (extractResults.results && extractResults.results.length > 0) {
+            showStatusMessage(`Processed ${extractResults.results.length} records with some errors: <ul>${errorMessages}</ul>`, 'warning');
+        } else {
+            showStatusMessage(`Failed to process files: <ul>${errorMessages}</ul>`, 'error');
+        }
+    } else {
+        showStatusMessage(`Successfully processed ${extractResults.results ? extractResults.results.length : 0} records.`, 'success');
     }
 }
 
@@ -686,186 +1064,92 @@ async function updateSessionStatus() {
 }
 
 function updateExtractionResults() {
-    const extractionResults = document.getElementById('extraction-results');
     const resultsPlaceholder = document.getElementById('resultsPlaceholder');
     const resultsTableContainer = document.getElementById('resultsTableContainer');
+    const resultsTableHead = document.getElementById('resultsTableHead');
+    const resultsTableBody = document.getElementById('resultsTableBody');
+    const exportSection = document.getElementById('exportSection');
 
-    if (!extractionResults) return;
+    const records = structuredRecords.length > 0 ? structuredRecords : rawExtractions;
 
-    if (structuredRecords.length === 0 && rawExtractions.length === 0) {
-        // Show placeholder when no results
+    if (!records || records.length === 0) {
         if (resultsPlaceholder) resultsPlaceholder.style.display = 'flex';
         if (resultsTableContainer) resultsTableContainer.style.display = 'none';
+        if (exportSection) exportSection.style.display = 'none';
         return;
     }
 
-    // Hide placeholder, show results
-    if (resultsPlaceholder) resultsPlaceholder.style.display = 'none';
-    if (resultsTableContainer) resultsTableContainer.style.display = 'block';
+    // Get field names to use (custom headers if available, otherwise generate from field name)
+    function getFieldDisplayName(field) {
+        if (currentHeaderConfig && currentHeaderConfig.header_mappings && currentHeaderConfig.header_mappings[field]) {
+            return currentHeaderConfig.header_mappings[field];
+        }
+        // Convert field name to readable format (snake_case to Title Case)
+        return field.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
+    }
 
-    // Use structured records if available, otherwise use raw extractions
-    const records = structuredRecords.length > 0 ? structuredRecords : rawExtractions;
+    // Analyze data to find which fields have values
+    const fieldsWithData = new Set();
+    records.forEach(record => {
+        Object.keys(record).forEach(key => {
+            const value = record[key];
+            // Less strict filtering - only exclude truly empty values
+            if (value !== null && value !== undefined && value !== '') {
+                fieldsWithData.add(key);
+            }
+        });
+    });
 
-    // Get unique file names (limit to 5)
-    const uniqueFileNames = [...new Set(records.map(record => record.filename || 'Unknown file'))];
-    const displayFileNames = uniqueFileNames.slice(0, 5);
-    const remainingFiles = uniqueFileNames.length > 5 ? uniqueFileNames.length - 5 : 0;
+    // Convert to array and sort alphabetically for consistent display
+    const sortedFields = Array.from(fieldsWithData).sort();
 
-    // Create summary card
-    const summaryHTML = `
-        <div class="results-summary-card">
-            <div class="summary-header">
-                <div class="summary-icon">
-                    <i class="fas fa-check-circle"></i>
-                </div>
-                <div class="summary-counts">
-                    <div class="total-records">${records.length}</div>
-                    <div class="records-label">Records Processed</div>
-                </div>
-            </div>
-            <div class="files-processed">
-                <h4>Files Processed:</h4>
-                <ul class="file-list">
-                    ${displayFileNames.map(name => `<li><i class="fas fa-file-alt"></i> ${name}</li>`).join('')}
-                    ${remainingFiles > 0 ? `<li class="more-files">+ ${remainingFiles} more files</li>` : ''}
-                </ul>
-            </div>
-        </div>
-    `;
+    // Clear previous results
+    if (resultsTableHead) resultsTableHead.innerHTML = '';
+    if (resultsTableBody) resultsTableBody.innerHTML = '';
 
-    // Update the DOM
-    const resultsTableBody = document.getElementById('resultsTableBody');
-    if (resultsTableBody) {
-        // Clear existing rows
-        resultsTableBody.innerHTML = '';
+    // Create dynamic table headers and rows
+    if (sortedFields.length > 0 && resultsTableHead && resultsTableBody) {
+        const headerRow = document.createElement('tr');
+        sortedFields.forEach(field => {
+            const th = document.createElement('th');
+            th.textContent = getFieldDisplayName(field);
+            th.setAttribute('data-field', field); // Store field name for reference
+            headerRow.appendChild(th);
+        });
+        resultsTableHead.appendChild(headerRow);
 
         // Add rows for each record
         records.forEach(record => {
             const row = document.createElement('tr');
-            row.innerHTML = `
-                <td>${record.filename || 'Unknown'}</td>
-                <td>${record.bank_name || 'N/A'}</td>
-                <td>${record.account_name || 'N/A'}</td>
-                <td>${record.account_number || 'N/A'}</td>
-                <td>${record.sort_code || 'N/A'}</td>
-                <td>${record.iban || 'N/A'}</td>
-                <td>${record.swift_code || 'N/A'}</td>
-                <td>${record.routing_number || 'N/A'}</td>
-                <td>${record.bsb_code || 'N/A'}</td>
-            `;
+            sortedFields.forEach(field => {
+                const td = document.createElement('td');
+                const value = record[field];
+
+                // Format the value appropriately
+                if (value === null || value === undefined || value === '') {
+                    td.textContent = '-';
+                    td.className = 'empty-value';
+                } else if (field === 'other_details' && typeof value === 'object') {
+                    // Handle JSON objects in other_details
+                    td.textContent = JSON.stringify(value, null, 2);
+                    td.className = 'json-data';
+                } else {
+                    // Display the actual value
+                    td.textContent = String(value);
+                }
+
+                row.appendChild(td);
+            });
             resultsTableBody.appendChild(row);
         });
     }
 
-    // Insert summary card before the table
-    if (resultsTableContainer) {
-        // Check if summary card already exists
-        let summaryCard = document.querySelector('.results-summary-card');
-        if (!summaryCard) {
-            resultsTableContainer.insertAdjacentHTML('beforebegin', summaryHTML);
-        } else {
-            summaryCard.outerHTML = summaryHTML;
-        }
-    }
+    if (resultsPlaceholder) resultsPlaceholder.style.display = 'none';
+    if (resultsTableContainer) resultsTableContainer.style.display = 'block';
+    if (exportSection) exportSection.style.display = 'block';
 
-    // Add CSS for the summary card
-    if (!document.getElementById('summary-card-styles')) {
-        const style = document.createElement('style');
-        style.id = 'summary-card-styles';
-        style.textContent = `
-            .results-summary-card {
-                background: linear-gradient(135deg, #f5f7fa, #e9f0f6);
-                border-radius: 12px;
-                padding: 20px;
-                margin-bottom: 20px;
-                box-shadow: 0 4px 15px rgba(0, 0, 0, 0.05);
-                border: 1px solid #e0e6ed;
-            }
-            
-            .summary-header {
-                display: flex;
-                align-items: center;
-                margin-bottom: 15px;
-            }
-            
-            .summary-icon {
-                font-size: 2.5rem;
-                color: #4CAF50;
-                margin-right: 20px;
-            }
-            
-            .summary-counts {
-                display: flex;
-                flex-direction: column;
-            }
-            
-            .total-records {
-                font-size: 2rem;
-                font-weight: bold;
-                color: #2c3e50;
-                line-height: 1;
-            }
-            
-            .records-label {
-                font-size: 0.9rem;
-                color: #7f8c8d;
-            }
-            
-            .files-processed h4 {
-                margin-top: 0;
-                margin-bottom: 10px;
-                font-size: 1rem;
-                color: #34495e;
-            }
-            
-            .file-list {
-                list-style: none;
-                padding: 0;
-                margin: 0;
-                display: flex;
-                flex-wrap: wrap;
-                gap: 8px;
-            }
-            
-            .file-list li {
-                background-color: #ffffff;
-                padding: 6px 12px;
-                border-radius: 20px;
-                font-size: 0.85rem;
-                display: inline-flex;
-                align-items: center;
-                box-shadow: 0 2px 5px rgba(0,0,0,0.05);
-                border: 1px solid #eaeaea;
-            }
-            
-            .file-list li i {
-                margin-right: 5px;
-                color: #3498db;
-            }
-            
-            .more-files {
-                background-color: #f1f5f9 !important;
-                color: #64748b;
-            }
-            
-            @media (max-width: 768px) {
-                .summary-header {
-                    flex-direction: column;
-                    text-align: center;
-                }
-                
-                .summary-icon {
-                    margin-right: 0;
-                    margin-bottom: 10px;
-                }
-                
-                .file-list {
-                    justify-content: center;
-                }
-            }
-        `;
-        document.head.appendChild(style);
-    }
+    // Load header configurations for the export dropdown
+    loadHeaderConfigurations();
 }
 
 async function checkSessionStatus() {
@@ -923,7 +1207,7 @@ function downloadExport() {
     let url = '';
 
     if (format === 'json') {
-        url = `/api/download-json`;
+        url = '/api/download-json';
     } else {
         url = `/api/download-csv?format=${format}`;
 

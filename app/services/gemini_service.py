@@ -11,6 +11,7 @@ from typing import Dict, Any, List, Optional, Tuple
 
 import google.generativeai as genai
 import httpx
+import anyio
 from fastapi import HTTPException
 from PyPDF2 import PdfReader
 from PIL import Image
@@ -26,6 +27,9 @@ logger.setLevel(logging.DEBUG)
 class GeminiService:
     """Service for interacting with Google Gemini AI"""
     
+    # Shared HTTPX client across instances
+    _shared_client: Optional[httpx.AsyncClient] = None
+    
     def __init__(self):
         """Initialize the Gemini service with API key"""
         logger.debug("Initializing Gemini service")
@@ -34,7 +38,25 @@ class GeminiService:
             self.model = genai.GenerativeModel('gemini-2.5-flash-preview-05-20')
             self.api_key = settings.API_KEY
             self.api_url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent"
-            logger.debug("Gemini service initialized successfully")
+            
+            # Detect HTTP/2 support (h2 package)
+            http2_available = False
+            try:
+                import h2  # noqa: F401
+                http2_available = True
+            except Exception:
+                logger.warning("HTTP/2 not available (missing 'h2'); falling back to HTTP/1.1. Install with: pip install 'httpx[http2]' or pip install h2")
+            
+            # Initialize or reuse a shared AsyncClient with HTTP/2 (if available) and tuned limits
+            if GeminiService._shared_client is None:
+                GeminiService._shared_client = httpx.AsyncClient(
+                    http2=http2_available,
+                    timeout=httpx.Timeout(connect=5.0, read=55.0, write=30.0, pool=60.0),
+                    limits=httpx.Limits(max_connections=20, max_keepalive_connections=20),
+                    headers={"Content-Type": "application/json"},
+                )
+            self.client = GeminiService._shared_client
+            logger.debug("Gemini service initialized successfully with shared HTTPX client")
         except Exception as e:
             logger.error(f"Error initializing Gemini service: {str(e)}")
             logger.error(traceback.format_exc())
@@ -114,6 +136,18 @@ class GeminiService:
             logger.error(f"Error validating image: {str(e)}")
             logger.error(traceback.format_exc())
             return False
+
+    async def _validate_pdf_async(self, pdf_data: bytes) -> bool:
+        """Async wrapper to offload PDF validation to a worker thread."""
+        return await anyio.to_thread.run_sync(self._validate_pdf, pdf_data)
+
+    async def _validate_image_async(self, image_data: bytes) -> bool:
+        """Async wrapper to offload image validation to a worker thread."""
+        return await anyio.to_thread.run_sync(self._validate_image, image_data)
+
+    async def _b64encode_async(self, data: bytes) -> str:
+        """Async wrapper to offload base64 encoding to a worker thread."""
+        return await anyio.to_thread.run_sync(lambda: base64.b64encode(data).decode('utf-8'))
     
     def _validate_zip(self, zip_data: bytes) -> List[Dict[str, Any]]:
         """
@@ -148,8 +182,8 @@ class GeminiService:
                 
                 # Extract supported files (PDF, PNG, JPG, JPEG, WebP)
                 for file_info in zf.infolist():
-                    # Skip directories and hidden files
-                    if file_info.filename.endswith('/') or file_info.filename.startswith('__MACOSX') or file_info.filename.startswith('.'):
+                    # Skip directories and system files
+                    if file_info.filename.endswith('/') or self._is_system_file(file_info.filename):
                         continue
                     
                     # Get file extension
@@ -193,6 +227,67 @@ class GeminiService:
             logger.error(f"Error validating ZIP: {str(e)}")
             logger.error(traceback.format_exc())
             return []
+    
+    def _is_system_file(self, file_path: str) -> bool:
+        """
+        Check if a file is a system file that should be ignored
+        
+        Args:
+            file_path: The file path to check
+            
+        Returns:
+            True if it's a system file, False otherwise
+        """
+        system_patterns = [
+            # macOS system files
+            '__MACOSX',
+            '.DS_Store',
+            '._.DS_Store',
+            '._',
+            '.fseventsd',
+            '.Spotlight-V100',
+            '.TemporaryItems',
+            '.Trashes',
+            '.VolumeIcon.icns',
+            '.com.apple.',
+            
+            # Windows system files
+            'Thumbs.db',
+            'ehthumbs.db',
+            'Desktop.ini',
+            '$RECYCLE.BIN',
+            'System Volume Information',
+            
+            # Linux system files
+            '.directory',
+            '.trash',
+            
+            # General hidden files and directories
+            '.git',
+            '.svn',
+            '.hg',
+            'node_modules',
+            '.env'
+        ]
+        
+        # Convert to lowercase for case-insensitive matching
+        path_lower = file_path.lower()
+        
+        # Check if the path contains any system patterns
+        for pattern in system_patterns:
+            if pattern.lower() in path_lower:
+                return True
+        
+        # Check if it's a hidden file (starts with .)
+        file_name = file_path.split('/')[-1]
+        if file_name.startswith('.'):
+            return True
+        
+        # Check if it's in a hidden directory
+        if '/.' in file_path:
+            return True
+        
+        return False
     
     def extract_bank_details(self, file_data: bytes, file_ext: str = '.pdf', header_config: Optional[HeaderConfig] = None) -> Dict[str, Any]:
         """
@@ -267,9 +362,9 @@ class GeminiService:
                 raise HTTPException(status_code=500, detail="No text response received from Gemini")
             
             # Parse the response
-            logger.debug(f"Parsing response: \n\n\n{response.text}")
+            logger.debug(f"Parsing response from Gemini (length: {len(response.text)} chars)")
             json_data = self._parse_response(response.text)
-            logger.debug(f"Parsed JSON data from response")
+            logger.debug(f"Successfully parsed JSON response")
             return json_data
             
         except HTTPException as he:
@@ -292,19 +387,19 @@ class GeminiService:
             Prompt string for Gemini AI
         """
         logger.debug("Creating prompt for Gemini AI")
-        
+    
         # If header config is provided, use it to customize the fields to extract
-        if header_config and header_config.header_mappings:
-            logger.debug(f"Using custom header configuration: {header_config.name}")
+        if header_config and header_config["header_mappings"]:
+            logger.info(f"Using custom header configuration: {header_config['name']}")
             
             # Get all fields from the header mappings without filtering
-            fields_to_extract = list(header_config.header_mappings.keys())
+            fields_to_extract = list(header_config["header_mappings"].keys())
             logger.debug(f"Using fields from header configuration: {fields_to_extract}")
             
             # Create field descriptions for the prompt
             field_descriptions = []
             for field in fields_to_extract:
-                display_name = header_config.header_mappings.get(field, field.replace('_', ' ').title())
+                display_name = header_config["header_mappings"].get(field, field.replace('_', ' ').title())
                 field_descriptions.append(f"- {display_name}")
             
             # If no valid fields were found, use default fields
@@ -318,7 +413,6 @@ class GeminiService:
                     {field: "value or null" for field in fields_to_extract}
                 ]
             }
-            
             # Format the JSON template as a string
             json_template_str = json.dumps(json_template, indent=4)
             
@@ -404,7 +498,7 @@ class GeminiService:
 
             if start_idx != -1 and end_idx != -1:
                 json_str = response_text[start_idx:end_idx]
-                logger.debug(f"Found JSON in response, length: {len(json_str)}")
+                logger.debug(f"Found JSON in response, length: {len(json_str)} chars")
                 
                 try:
                     data = json.loads(json_str)
@@ -412,7 +506,7 @@ class GeminiService:
                     return data
                 except json.JSONDecodeError as jde:
                     logger.error(f"JSON decode error: {str(jde)}")
-                    logger.error(f"JSON string: {json_str}")
+                    logger.error(f"JSON string length: {len(json_str)} chars (decode failed)")
                     return {}
                 except Exception as e:
                     logger.error(f"Error parsing JSON: {str(e)}")
@@ -427,7 +521,7 @@ class GeminiService:
             logger.error(f"Error parsing response: {str(e)}")
             logger.error(traceback.format_exc())
             # Fallback: return empty dict if JSON parsing fails
-            return {} 
+            return {}
 
     async def extract_bank_details_async(self, file_data: bytes, file_ext: str = '.pdf', header_config: Optional[HeaderConfig] = None) -> Dict[str, Any]:
         """
@@ -447,12 +541,12 @@ class GeminiService:
         try:
             logger.debug(f"Extracting bank details asynchronously from file with extension {file_ext}, size: {len(file_data)} bytes")
             
-            # Validate file based on type
+            # Validate file based on type (offload to threads)
             is_valid = False
             mime_type = ""
             
             if file_ext.lower() == '.pdf':
-                is_valid = self._validate_pdf(file_data)
+                is_valid = await self._validate_pdf_async(file_data)
                 mime_type = "application/pdf"
                 if not is_valid:
                     raise HTTPException(
@@ -460,7 +554,7 @@ class GeminiService:
                         detail="Invalid PDF file: The document appears to be empty or corrupted"
                     )
             elif file_ext.lower() in ['.png', '.jpg', '.jpeg', '.webp']:
-                is_valid = self._validate_image(file_data)
+                is_valid = await self._validate_image_async(file_data)
                 if file_ext.lower() == '.png':
                     mime_type = "image/png"
                 elif file_ext.lower() == '.webp':
@@ -481,8 +575,8 @@ class GeminiService:
             # Create prompt for Gemini based on header configuration
             prompt_text = self._create_prompt(header_config)
             
-            # Encode file data to base64
-            encoded_file = base64.b64encode(file_data).decode('utf-8')
+            # Encode file data to base64 (offload to thread)
+            encoded_file = await self._b64encode_async(file_data)
             
             # Prepare request payload
             payload = {
@@ -503,53 +597,51 @@ class GeminiService:
                 ]
             }
             
-            # Make async API call
-            logger.debug("Calling Gemini API asynchronously...")
-            async with httpx.AsyncClient(timeout=60.0) as client:
-                response = await client.post(
-                    f"{self.api_url}?key={self.api_key}",
-                    json=payload,
-                    headers={"Content-Type": "application/json"}
+            # Make async API call using shared client
+            logger.debug("Calling Gemini API asynchronously (shared client)...")
+            response = await self.client.post(
+                f"{self.api_url}?key={self.api_key}",
+                json=payload,
+            )
+            
+            # Check for HTTP errors
+            if response.status_code != 200:
+                logger.error(f"Gemini API error: {response.status_code} - {response.text}")
+                raise HTTPException(
+                    status_code=response.status_code,
+                    detail=f"Gemini API error: {response.text}"
                 )
-                
-                # Check for HTTP errors
-                if response.status_code != 200:
-                    logger.error(f"Gemini API error: {response.status_code} - {response.text}")
-                    raise HTTPException(
-                        status_code=response.status_code,
-                        detail=f"Gemini API error: {response.text}"
-                    )
-                
-                # Parse response
-                response_data = response.json()
-                logger.debug("Received response from Gemini API")
-                
-                # Check if response contains content
-                if not response_data.get("candidates"):
-                    logger.warning("No candidates in Gemini response")
-                    raise HTTPException(status_code=500, detail="No valid response received from Gemini")
-                
-                # Check for safety issues
-                candidate = response_data["candidates"][0]
-                if candidate.get("finishReason") == "SAFETY":
-                    logger.warning("Gemini response was blocked due to safety concerns")
-                    raise HTTPException(status_code=400, detail="Content was blocked due to safety concerns")
-                
-                # Extract text from response
-                content = candidate.get("content", {})
-                parts = content.get("parts", [])
-                
-                if not parts or "text" not in parts[0]:
-                    logger.warning("No text in Gemini response")
-                    raise HTTPException(status_code=500, detail="No text response received from Gemini")
-                
-                response_text = parts[0]["text"]
-                
-                # Parse the response
-                logger.debug(f"Parsing response: \n\n\n{response_text}")
-                json_data = self._parse_response(response_text)
-                logger.debug(f"Parsed JSON data from response")
-                return json_data
+            
+            # Parse response
+            response_data = response.json()
+            logger.debug("Received response from Gemini API")
+            
+            # Check if response contains content
+            if not response_data.get("candidates"):
+                logger.warning("No candidates in Gemini response")
+                raise HTTPException(status_code=500, detail="No valid response received from Gemini")
+            
+            # Check for safety issues
+            candidate = response_data["candidates"][0]
+            if candidate.get("finishReason") == "SAFETY":
+                logger.warning("Gemini response was blocked due to safety concerns")
+                raise HTTPException(status_code=400, detail="Content was blocked due to safety concerns")
+            
+            # Extract text from response
+            content = candidate.get("content", {})
+            parts = content.get("parts", [])
+            
+            if not parts or "text" not in parts[0]:
+                logger.warning("No text in Gemini response")
+                raise HTTPException(status_code=500, detail="No text response received from Gemini")
+            
+            response_text = parts[0]["text"]
+            
+            # Parse the response
+            logger.debug(f"Parsing response from Gemini (length: {len(response_text)} chars)")
+            json_data = self._parse_response(response_text)
+            logger.debug(f"Successfully parsed JSON response")
+            return json_data
                 
         except HTTPException as he:
             # Re-raise HTTP exceptions

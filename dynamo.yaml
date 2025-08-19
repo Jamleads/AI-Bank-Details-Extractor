@@ -34,6 +34,10 @@ Parameters:
     Type: String
     Default: api-keys
 
+  PricingActionsTableName:
+    Type: String
+    Default: pricing-actions
+
 Resources:
 
   UsersTable:
@@ -197,6 +201,41 @@ Resources:
           Projection:
             ProjectionType: ALL
 
+  PricingActionsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub ${PricingActionsTableName}
+      BillingMode: PAY_PER_REQUEST
+      SSESpecification:
+        SSEEnabled: true
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
+      AttributeDefinitions:
+        - AttributeName: id
+          AttributeType: S
+        - AttributeName: user_id
+          AttributeType: S
+        - AttributeName: timestamp
+          AttributeType: S
+      KeySchema:
+        - AttributeName: id
+          KeyType: HASH
+      GlobalSecondaryIndexes:
+        - IndexName: user-id-index
+          KeySchema:
+            - AttributeName: user_id
+              KeyType: HASH
+            - AttributeName: timestamp
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+        - IndexName: timestamp-index
+          KeySchema:
+            - AttributeName: timestamp
+              KeyType: HASH
+          Projection:
+            ProjectionType: ALL
+
 Outputs:
   UsersTableOutput:
     Value: !Ref UsersTable
@@ -227,3 +266,8 @@ Outputs:
     Value: !Ref ApiKeysTable
     Export:
       Name: !Sub ${ApiKeysTableName}-table
+
+  PricingActionsTableOutput:
+    Value: !Ref PricingActionsTable
+    Export:
+      Name: !Sub ${PricingActionsTableName}-table

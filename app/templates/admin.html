@@ -317,6 +317,14 @@
             <h3>Total Extractions</h3>
             <div class="stat-value" id="extractions-count">-</div>
         </div>
+        <div class="stat-card">
+            <h3>Pricing Card Clicks</h3>
+            <div class="stat-value" id="pricing-actions-count">-</div>
+        </div>
+        <div class="stat-card">
+            <h3>Most Clicked Tier</h3>
+            <div class="stat-value" id="most-clicked-tier">-</div>
+        </div>
     </div>
 
     <h2>User Management</h2>
@@ -348,6 +356,35 @@
         </div>
     </div>
 
+    <!-- Pricing Actions Section -->
+    <div class="admin-section">
+        <h2>Pricing Actions</h2>
+        <p>Track user interactions with pricing cards to understand user behavior and preferences.</p>
+
+        <div id="pricing-actions-container">
+            <div class="loading-spinner" id="pricing-loading-spinner">
+                <div class="spinner"></div>
+            </div>
+            <div class="table-responsive">
+                <table class="users-table" id="pricing-actions-table" style="display: none;">
+                    <thead>
+                        <tr>
+                            <th>Date/Time</th>
+                            <th>Email</th>
+                            <th>Tier Clicked</th>
+                            <th>Price</th>
+                            <th>User Tier</th>
+                            <th>IP Address</th>
+                        </tr>
+                    </thead>
+                    <tbody id="pricing-actions-table-body">
+                        <!-- Pricing actions will be populated here -->
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
     <!-- Ad Management Section -->
     <div class="admin-section">
         <h2>Advertisement Management</h2>
@@ -357,18 +394,37 @@
             <div class="form-group">
                 <label for="ad-image">Advertisement Image</label>
                 <input type="file" id="ad-image" name="image" accept="image/*" required>
+                <small style="color: #6c757d; display: block; margin-top: 5px;">
+                    <strong>Recommended dimensions:</strong> 800x120 pixels (or similar 7:1 ratio)<br>
+                    <strong>Maximum height:</strong> 120px (width will auto-scale)<br>
+                    <strong>Formats:</strong> JPG, PNG, WebP, GIF
+                </small>
             </div>
             <div class="form-group">
-                <label for="ad-text">Advertisement Text</label>
-                <textarea id="ad-text" name="ad_text" placeholder="Enter advertisement text" required></textarea>
+                <label for="ad-link">Advertisement Link</label>
+                <input type="url" id="ad-link" name="link" placeholder="https://example.com" required>
+                <small>URL to redirect when the banner is clicked</small>
+            </div>
+            <div class="form-group">
+                <label for="ad-text">Advertisement Text (Optional)</label>
+                <textarea id="ad-text" name="ad_text"
+                    placeholder="Optional text to display below the banner"></textarea>
+                <small>Leave empty if you don't want any text below the banner</small>
             </div>
             <button type="submit" class="btn-primary" id="upload-ad-btn">Upload Advertisement</button>
         </form>
 
         <div class="preview-container" id="preview-container">
             <h3>Preview</h3>
-            <img src="" alt="Advertisement Preview" class="preview-image" id="preview-image">
-            <p class="preview-text" id="preview-text"></p>
+            <div style="border: 1px solid #e9ecef; border-radius: 8px; overflow: hidden; margin-bottom: 10px;">
+                <img src="" alt="Advertisement Preview" class="preview-image" id="preview-image"
+                    style="width: 100%; height: auto; max-height: 120px; object-fit: cover; display: block;">
+            </div>
+            <p class="preview-link" id="preview-link" style="font-size: 12px; color: #6c757d; margin: 5px 0;">Link:
+                <span id="preview-link-text">No link specified</span>
+            </p>
+            <p class="preview-text" id="preview-text"
+                style="font-size: 14px; color: #495057; text-align: center; margin-top: 10px;"></p>
         </div>
 
         <div class="success-message" id="ad-success-message"></div>
@@ -407,6 +463,7 @@
                 // Load admin data
                 loadAdminData();
                 setupAdForm();
+                loadPricingActions();
             })
             .catch(error => {
                 console.error('Error checking admin status:', error);
@@ -429,12 +486,36 @@
                 .then(stats => {
                     document.getElementById('users-count').textContent = stats.users_count;
                     document.getElementById('extractions-count').textContent = stats.extractions_count;
+                    document.getElementById('pricing-actions-count').textContent = stats.pricing_actions_count;
+                    document.getElementById('most-clicked-tier').textContent = stats.most_clicked_tier || 'N/A';
                 })
                 .catch(error => {
                     console.error('Error loading stats:', error);
                 });
 
-            // Load users
+            // Load pricing actions stats
+            fetch('/api/admin/pricing-actions/stats', {
+                headers: {
+                    'Authorization': `Bearer ${token}`
+                }
+            })
+                .then(response => {
+                    if (!response.ok) {
+                        throw new Error(`Error: ${response.status}`);
+                    }
+                    return response.json();
+                })
+                .then(stats => {
+                    document.getElementById('pricing-actions-count').textContent = stats.total_actions || 0;
+                    document.getElementById('most-clicked-tier').textContent = stats.most_clicked_tier || 'N/A';
+                })
+                .catch(error => {
+                    console.error('Error loading pricing stats:', error);
+                    document.getElementById('pricing-actions-count').textContent = '0';
+                    document.getElementById('most-clicked-tier').textContent = 'N/A';
+                });
+
+            // Load users (existing code)
             fetch('/api/admin/users', {
                 headers: {
                     'Authorization': `Bearer ${token}`
@@ -528,9 +609,12 @@
         function setupAdForm() {
             const adForm = document.getElementById('ad-form');
             const adImage = document.getElementById('ad-image');
+            const adLink = document.getElementById('ad-link');
             const adText = document.getElementById('ad-text');
             const previewContainer = document.getElementById('preview-container');
             const previewImage = document.getElementById('preview-image');
+            const previewLink = document.getElementById('preview-link');
+            const previewLinkText = document.getElementById('preview-link-text');
             const previewText = document.getElementById('preview-text');
             const successMessage = document.getElementById('ad-success-message');
             const errorMessage = document.getElementById('ad-error-message');
@@ -541,6 +625,41 @@
                 if (file) {
                     const reader = new FileReader();
                     reader.onload = function (e) {
+                        // Create an image element to check dimensions
+                        const img = new Image();
+                        img.onload = function () {
+                            const width = this.width;
+                            const height = this.height;
+                            const aspectRatio = width / height;
+
+                            // Check if dimensions are optimal for banner (around 7:1 ratio)
+                            const idealRatio = 7;
+                            const tolerance = 1.5; // Allow some flexibility
+
+                            if (aspectRatio < (idealRatio - tolerance) || aspectRatio > (idealRatio + tolerance)) {
+                                const warningMsg = document.createElement('div');
+                                warningMsg.id = 'dimension-warning';
+                                warningMsg.style.cssText = 'color: #f39c12; font-size: 12px; margin-top: 5px; padding: 8px; background: #fef9e7; border-radius: 4px; border-left: 3px solid #f39c12;';
+                                warningMsg.innerHTML = `
+                                    <strong>⚠️ Image dimensions notice:</strong><br>
+                                    Current: ${width}x${height}px (ratio: ${aspectRatio.toFixed(1)}:1)<br>
+                                    Recommended: 800x120px (ratio: 7:1) for optimal banner display
+                                `;
+
+                                // Remove existing warning
+                                const existingWarning = document.getElementById('dimension-warning');
+                                if (existingWarning) existingWarning.remove();
+
+                                // Add warning after the file input
+                                adImage.parentNode.appendChild(warningMsg);
+                            } else {
+                                // Remove warning if dimensions are good
+                                const existingWarning = document.getElementById('dimension-warning');
+                                if (existingWarning) existingWarning.remove();
+                            }
+                        };
+                        img.src = e.target.result;
+
                         previewImage.src = e.target.result;
                         previewContainer.classList.add('active');
                     };
@@ -553,6 +672,11 @@
                 previewText.textContent = this.value;
             });
 
+            // Update preview link when link changes
+            adLink.addEventListener('input', function () {
+                previewLinkText.textContent = this.value || 'No link specified';
+            });
+
             // Handle form submission
             adForm.addEventListener('submit', function (e) {
                 e.preventDefault();
@@ -563,6 +687,7 @@
 
                 const formData = new FormData();
                 formData.append('image', adImage.files[0]);
+                formData.append('link', adLink.value);
                 formData.append('ad_text', adText.value);
 
                 // Disable submit button
@@ -602,6 +727,83 @@
                         submitBtn.disabled = false;
                         submitBtn.textContent = 'Upload Advertisement';
                     });
+            });
+        }
+
+        function loadPricingActions() {
+            // Load pricing actions data
+            fetch('/api/admin/pricing-actions?limit=200', {
+                headers: {
+                    'Authorization': `Bearer ${token}`
+                }
+            })
+                .then(response => {
+                    if (!response.ok) {
+                        throw new Error(`Error: ${response.status}`);
+                    }
+                    return response.json();
+                })
+                .then(data => {
+                    // Hide spinner and show table
+                    document.getElementById('pricing-loading-spinner').style.display = 'none';
+                    document.getElementById('pricing-actions-table').style.display = 'table';
+
+                    // Populate pricing actions table
+                    populatePricingActionsTable(data.pricing_actions || []);
+                })
+                .catch(error => {
+                    console.error('Error loading pricing actions:', error);
+                    document.getElementById('pricing-loading-spinner').style.display = 'none';
+                    document.getElementById('pricing-actions-container').innerHTML =
+                        `<div class="error-message">Error loading pricing actions: ${error.message}</div>`;
+                });
+        }
+
+        function populatePricingActionsTable(actions) {
+            const tableBody = document.getElementById('pricing-actions-table-body');
+            tableBody.innerHTML = '';
+
+            if (actions.length === 0) {
+                const row = document.createElement('tr');
+                row.innerHTML = '<td colspan="7" style="text-align: center; color: #666;">No pricing actions found</td>';
+                tableBody.appendChild(row);
+                return;
+            }
+
+            actions.forEach(action => {
+                const row = document.createElement('tr');
+
+                // Format timestamp
+                let formattedDate = 'N/A';
+                if (action.timestamp) {
+                    try {
+                        const date = new Date(action.timestamp);
+                        formattedDate = date.toLocaleString();
+                    } catch (e) {
+                        formattedDate = action.timestamp;
+                    }
+                }
+
+                // Format price
+                const price = action.price !== undefined && action.price !== null ?
+                    `$${parseFloat(action.price).toFixed(2)}` : 'N/A';
+
+                // Tier badge
+                const tierBadge = `<span class="badge badge-primary">${action.pricing_tier || 'N/A'}</span>`;
+
+                // User tier badge
+                const userTierBadge = `<span class="badge badge-success">${action.user_subscription_tier || 'FREE'}</span>`;
+
+                row.innerHTML = `
+                    <td>${formattedDate}</td>
+                    <td>${action.user_email || 'N/A'}</td>
+                    <td>${tierBadge}</td>
+                    <td>${price}</td>
+                    <td>${userTierBadge}</td>
+                    <td title="${action.ip_address || 'N/A'}">${action.ip_address ? action.ip_address.substring(0, 12) + '...' : 'N/A'}</td>
+                `;
+
+                tableBody.appendChild(row);
             });
         }
     });

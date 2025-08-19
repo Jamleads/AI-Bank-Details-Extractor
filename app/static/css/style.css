@@ -506,6 +506,59 @@ body {
     margin-bottom: 1rem;
 }
 
+/* Dynamic table enhancements */
+.results-table td.json-data {
+    font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+    font-size: 0.9em;
+    background-color: #f8f9fa;
+    border-radius: 3px;
+    padding: 0.5rem;
+    white-space: pre-wrap;
+    word-break: break-all;
+    max-width: 300px;
+}
+
+.results-table td.empty-value {
+    color: #999;
+    font-style: italic;
+}
+
+.results-table th[data-field] {
+    position: relative;
+}
+
+.results-table th[data-field]:hover::after {
+    content: attr(data-field);
+    position: absolute;
+    bottom: -25px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: #333;
+    color: white;
+    padding: 4px 8px;
+    border-radius: 4px;
+    font-size: 0.8em;
+    white-space: nowrap;
+    z-index: 1000;
+}
+
+/* Responsive table improvements */
+@media (max-width: 768px) {
+    .results-table {
+        font-size: 0.9em;
+    }
+
+    .results-table th,
+    .results-table td {
+        padding: 0.5rem 0.3rem;
+    }
+
+    .results-table td.json-data {
+        max-width: 200px;
+        font-size: 0.8em;
+    }
+}
+
 .export-options {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));

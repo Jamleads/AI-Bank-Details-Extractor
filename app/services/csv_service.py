@@ -3,6 +3,7 @@ Service for handling CSV operations
 """
 import csv
 import os
+import tempfile
 from datetime import datetime
 from typing import List, Dict, Any
 
@@ -15,8 +16,10 @@ class CSVService:
     
     def __init__(self):
         """Initialize the CSV service"""
-        self.csv_path = settings.OUTPUT_FOLDER / "combined_bank_details.csv"
-        os.makedirs(settings.OUTPUT_FOLDER, exist_ok=True)
+        # Use /tmp directory in Lambda, which is writable
+        self.csv_path = os.path.join('/tmp', 'combined_bank_details.csv')
+        # Ensure /tmp directory exists (it should in Lambda)
+        os.makedirs('/tmp', exist_ok=True)
     
     def save_bank_details(self, bank_details: List[BankDetail], source_pdf: str) -> Dict[str, Any]:
         """

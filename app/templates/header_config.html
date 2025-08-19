@@ -282,6 +282,79 @@
         margin-right: 8px;
         cursor: pointer;
     }
+
+    /* Field selector styling */
+    #fieldSelector {
+        display: grid;
+        gap: 12px;
+        margin-top: 15px;
+    }
+
+    .field-item {
+        display: flex;
+        align-items: center;
+        gap: 15px;
+        padding: 12px;
+        background-color: #f8f9fa;
+        border-radius: 6px;
+        border: 1px solid #e9ecef;
+        transition: all 0.2s ease;
+    }
+
+    .field-item:hover {
+        background-color: #f1f3f4;
+    }
+
+    .field-item.selected {
+        background-color: #e8f5e8;
+        border-color: #4CAF50;
+    }
+
+    .field-checkbox {
+        width: 18px;
+        height: 18px;
+        cursor: pointer;
+        accent-color: #4CAF50;
+    }
+
+    .field-info {
+        flex: 1;
+        min-width: 0;
+    }
+
+    .field-name {
+        font-weight: 600;
+        color: #2c3e50;
+        margin-bottom: 2px;
+    }
+
+    .field-description {
+        font-size: 0.85em;
+        color: #6c757d;
+    }
+
+    .field-custom-name {
+        flex: 1;
+        min-width: 200px;
+        padding: 8px 12px;
+        border: 1px solid #ddd;
+        border-radius: 4px;
+        font-size: 0.9em;
+        background-color: white;
+        transition: border-color 0.2s ease;
+    }
+
+    .field-custom-name:focus {
+        outline: none;
+        border-color: #4CAF50;
+        box-shadow: 0 0 0 2px rgba(76, 175, 80, 0.1);
+    }
+
+    .field-custom-name:disabled {
+        background-color: #f8f9fa;
+        color: #6c757d;
+        cursor: not-allowed;
+    }
 </style>
 {% endblock %}
 
@@ -324,15 +397,15 @@
         </div>
 
         <div class="form-group">
-            <label>Header Mappings</label>
-            <!-- <p>Remove the field names you do not need. The remaining fields will be used as header when exporting your bank details.</p> -->
-            <p>Keep only the fields you need. These will be used as headers when exporting your bank details.</p>
-            <div id="mappingRows">
-                <!-- Mapping rows will be added here -->
+            <label>Select Fields to Export</label>
+            <p>Choose which bank details you want to include in your export. You can also customize the column names.
+            </p>
+            <div id="fieldSelector">
+                <!-- Field checkboxes will be added here -->
             </div>
 
-            <button type="button" id="addMappingBtn" class="btn-add">
-                <i class="fas fa-plus"></i> Add Field
+            <button type="button" id="addCustomFieldBtn" class="btn-add">
+                <i class="fas fa-plus"></i> Add Custom Field
             </button>
         </div>
 
@@ -361,6 +434,26 @@
     let defaultHeaders = {};
     let currentConfigs = [];
     let editingConfigId = null;
+
+    // Field descriptions for user-friendly interface
+    const fieldDescriptions = {
+        "source_pdf": "The name of the original PDF file",
+        "extraction_date": "When the bank details were extracted",
+        "account_number": "The bank account number",
+        "account_name": "The name on the bank account",
+        "bank_name": "The name of the bank",
+        "sort_code": "UK bank sort code (6 digits)",
+        "iban": "International Bank Account Number",
+        "swift_code": "Bank's SWIFT/BIC code for international transfers",
+        "routing_number": "US bank routing number (9 digits)",
+        "bsb_code": "Australian Bank State Branch code",
+        "branch_code": "Bank branch identifier code",
+        "branch_address": "Physical address of the bank branch",
+        "account_type": "Type of account (checking, savings, etc.)",
+        "currency": "Account currency (USD, EUR, GBP, etc.)",
+        "balance": "Current account balance",
+        "other_details": "Any additional banking information"
+    };
 
     // Initialize page
     document.addEventListener('DOMContentLoaded', function () {
@@ -395,7 +488,7 @@
         document.getElementById('addConfigBtn').addEventListener('click', showNewConfigForm);
         document.getElementById('cancelBtn').addEventListener('click', hideConfigForm);
         document.getElementById('headerConfigForm').addEventListener('submit', saveConfiguration);
-        document.getElementById('addMappingBtn').addEventListener('click', addMappingRow);
+        document.getElementById('addCustomFieldBtn').addEventListener('click', addCustomField);
     });
 
     // Fetch default headers
@@ -497,13 +590,13 @@
         document.getElementById('fileFormat').value = 'csv';
         document.getElementById('isDefault').checked = false;
 
-        // Clear mapping rows
-        const mappingRows = document.getElementById('mappingRows');
-        mappingRows.innerHTML = '';
+        // Clear field selector
+        const fieldSelector = document.getElementById('fieldSelector');
+        fieldSelector.innerHTML = '';
 
-        // Add default mappings
+        // Add all available fields to selector (unchecked for new config)
         for (const [field, header] of Object.entries(defaultHeaders)) {
-            addMappingRow(field, header);
+            addFieldToSelector(field, ''); // Empty string means unchecked
         }
 
         // Show form
@@ -527,13 +620,21 @@
         document.getElementById('fileFormat').value = config.file_format;
         document.getElementById('isDefault').checked = config.is_default;
 
-        // Clear mapping rows
-        const mappingRows = document.getElementById('mappingRows');
-        mappingRows.innerHTML = '';
+        // Clear field selector
+        const fieldSelector = document.getElementById('fieldSelector');
+        fieldSelector.innerHTML = '';
 
-        // Add mappings from config
+        // Add all available fields to selector
+        for (const [field, defaultHeader] of Object.entries(defaultHeaders)) {
+            const header = config.header_mappings[field] || ''; // Use existing mapping or empty
+            addFieldToSelector(field, header);
+        }
+
+        // Add custom fields that aren't in default headers
         for (const [field, header] of Object.entries(config.header_mappings)) {
-            addMappingRow(field, header);
+            if (!defaultHeaders.hasOwnProperty(field)) {
+                addCustomFieldToSelector(field, header);
+            }
         }
 
         // Show form
@@ -554,31 +655,156 @@
         editingConfigId = null;
     }
 
-    // Add mapping row
-    function addMappingRow(field = '', header = '') {
-        const mappingRows = document.getElementById('mappingRows');
-        const rowId = Date.now() + '_' + Math.random().toString(36).substr(2, 9); // More unique ID
+    // Add field to selector
+    function addFieldToSelector(field, header) {
+        const fieldSelector = document.getElementById('fieldSelector');
+        const fieldItem = document.createElement('div');
+        const isSelected = header !== undefined && header !== '';
+        fieldItem.className = `field-item ${isSelected ? 'selected' : ''}`;
+        fieldItem.innerHTML = `
+            <input type="checkbox" class="field-checkbox" id="field-${field}" value="${field}" ${isSelected ? 'checked' : ''}>
+            <div class="field-info">
+                <label for="field-${field}" class="field-name">${defaultHeaders[field] || field}</label>
+                <p class="field-description">${fieldDescriptions[field] || 'No description available'}</p>
+            </div>
+            <input type="text" class="field-custom-name" placeholder="Custom column name" value="${header || defaultHeaders[field] || ''}" ${isSelected ? '' : 'disabled'}>
+        `;
 
-        const row = document.createElement('div');
-        row.className = 'mapping-row';
-        row.id = `row-${rowId}`;
+        fieldSelector.appendChild(fieldItem);
 
-        row.innerHTML = `
-            <input type="text" class="field-name" placeholder="Field name" value="${field}" required>
-            <input type="text" class="header-value" placeholder="Header value" value="${header}" required>
-            <button type="button" class="btn-delete" onclick="removeMappingRow('${row.id}')">
+        // Add event listeners
+        const customHeaderInput = fieldItem.querySelector('.field-custom-name');
+        const fieldCheckbox = fieldItem.querySelector('.field-checkbox');
+
+        fieldCheckbox.addEventListener('change', function () {
+            if (this.checked) {
+                fieldItem.classList.add('selected');
+                customHeaderInput.removeAttribute('disabled');
+                if (!customHeaderInput.value) {
+                    customHeaderInput.value = defaultHeaders[field] || field;
+                }
+            } else {
+                fieldItem.classList.remove('selected');
+                customHeaderInput.setAttribute('disabled', 'disabled');
+            }
+        });
+    }
+
+    // Add custom field - simplified version where user only enters display name
+    function addCustomField() {
+        const fieldSelector = document.getElementById('fieldSelector');
+        const fieldItem = document.createElement('div');
+        fieldItem.className = 'field-item selected'; // New field is selected by default
+        fieldItem.innerHTML = `
+            <input type="checkbox" class="field-checkbox" id="field-custom-${Date.now()}" value="" checked>
+            <div class="field-info">
+                <label class="field-name">Custom Field</label>
+                <p class="field-description">Enter the column name you want to appear in your export</p>
+                <p class="field-key-preview" style="font-size: 0.8em; color: #6c757d; margin-top: 4px; font-family: monospace;">Key: <span class="key-value">custom_field</span></p>
+            </div>
+            <input type="text" class="field-custom-name" placeholder="Column name (e.g., Reference Number)" value="">
+            <button type="button" class="btn-delete" onclick="removeCustomField(this)" style="background: none; border: none; color: #f44336; cursor: pointer; padding: 8px; border-radius: 4px;">
                 <i class="fas fa-times"></i>
             </button>
         `;
 
-        mappingRows.appendChild(row);
+        fieldSelector.appendChild(fieldItem);
+
+        // Add event listeners
+        const customHeaderInput = fieldItem.querySelector('.field-custom-name');
+        const fieldCheckbox = fieldItem.querySelector('.field-checkbox');
+        const fieldNameLabel = fieldItem.querySelector('.field-name');
+        const keyValueSpan = fieldItem.querySelector('.key-value');
+
+        fieldCheckbox.addEventListener('change', function () {
+            if (this.checked) {
+                fieldItem.classList.add('selected');
+                customHeaderInput.removeAttribute('disabled');
+            } else {
+                fieldItem.classList.remove('selected');
+                customHeaderInput.setAttribute('disabled', 'disabled');
+            }
+        });
+
+        // Update checkbox value and label when display name changes
+        customHeaderInput.addEventListener('input', function () {
+            const displayName = this.value.trim();
+            // Convert to snake_case: lowercase, spaces to underscores, remove special chars
+            const fieldKey = displayName
+                .toLowerCase()                    // Convert all to lowercase
+                .replace(/\s+/g, '_')            // Replace spaces (one or more) with underscores
+                .replace(/[^a-z0-9_]/g, '')      // Remove any characters that aren't letters, numbers, or underscores
+                .replace(/_{2,}/g, '_')          // Replace multiple consecutive underscores with single underscore
+                .replace(/^_+|_+$/g, '');        // Remove leading and trailing underscores
+
+            fieldCheckbox.value = fieldKey;
+            fieldNameLabel.textContent = displayName || 'Custom Field';
+            keyValueSpan.textContent = fieldKey || 'custom_field';
+        });
+
+        // Focus on the display name input
+        customHeaderInput.focus();
     }
 
-    // Remove mapping row
-    function removeMappingRow(rowId) {
-        const row = document.getElementById(rowId);
-        if (row) {
-            row.remove();
+    // Add custom field to selector (for editing existing configs)
+    function addCustomFieldToSelector(field, header) {
+        const fieldSelector = document.getElementById('fieldSelector');
+        const fieldItem = document.createElement('div');
+        fieldItem.className = 'field-item selected'; // Custom fields are selected if they exist
+        fieldItem.innerHTML = `
+            <input type="checkbox" class="field-checkbox" id="field-${field}" value="${field}" checked>
+            <div class="field-info">
+                <label class="field-name">${header}</label>
+                <p class="field-description">Custom field - you can modify the column name</p>
+                <p class="field-key-preview" style="font-size: 0.8em; color: #6c757d; margin-top: 4px; font-family: monospace;">Key: <span class="key-value">${field}</span></p>
+            </div>
+            <input type="text" class="field-custom-name" placeholder="Column name" value="${header}">
+            <button type="button" class="btn-delete" onclick="removeCustomField(this)" style="background: none; border: none; color: #f44336; cursor: pointer; padding: 8px; border-radius: 4px;">
+                <i class="fas fa-times"></i>
+            </button>
+        `;
+
+        fieldSelector.appendChild(fieldItem);
+
+        // Add event listeners
+        const customHeaderInput = fieldItem.querySelector('.field-custom-name');
+        const fieldCheckbox = fieldItem.querySelector('.field-checkbox');
+        const fieldNameLabel = fieldItem.querySelector('.field-name');
+        const keyValueSpan = fieldItem.querySelector('.key-value');
+
+        fieldCheckbox.addEventListener('change', function () {
+            if (this.checked) {
+                fieldItem.classList.add('selected');
+                customHeaderInput.removeAttribute('disabled');
+            } else {
+                fieldItem.classList.remove('selected');
+                customHeaderInput.setAttribute('disabled', 'disabled');
+            }
+        });
+
+        // Update label and show what the new key would be when display name changes
+        customHeaderInput.addEventListener('input', function () {
+            const displayName = this.value.trim();
+            // Generate what the new key would be (for preview only)
+            const newFieldKey = displayName
+                .toLowerCase()                    // Convert all to lowercase
+                .replace(/\s+/g, '_')            // Replace spaces (one or more) with underscores
+                .replace(/[^a-z0-9_]/g, '')      // Remove any characters that aren't letters, numbers, or underscores
+                .replace(/_{2,}/g, '_')          // Replace multiple consecutive underscores with single underscore
+                .replace(/^_+|_+$/g, '');        // Remove leading and trailing underscores
+
+            fieldNameLabel.textContent = displayName || 'Custom Field';
+            // Show the new key that would be generated, but keep original field key in checkbox
+            keyValueSpan.textContent = newFieldKey || field;
+            keyValueSpan.style.color = newFieldKey !== field ? '#e67e22' : '#6c757d'; // Orange if different, gray if same
+        });
+    }
+
+    // Remove custom field
+    function removeCustomField(button) {
+        const fieldItem = button.closest('.field-item');
+        if (fieldItem) {
+            fieldItem.remove();
         }
     }
 
@@ -592,14 +818,15 @@
         const isDefault = document.getElementById('isDefault').checked;
 
         // Get mappings
-        const mappingRows = document.querySelectorAll('#mappingRows .mapping-row');
+        const fieldSelector = document.getElementById('fieldSelector');
         const headerMappings = {};
 
-        mappingRows.forEach(row => {
-            const field = row.querySelector('.field-name').value;
-            const header = row.querySelector('.header-value').value;
+        fieldSelector.querySelectorAll('.field-item').forEach(item => {
+            const checkbox = item.querySelector('.field-checkbox');
+            const field = checkbox.value; // Field key is already set by the checkbox value
+            const header = item.querySelector('.field-custom-name').value;
 
-            if (field && header) {
+            if (checkbox.checked && field && header) {
                 headerMappings[field] = header;
             }
         });

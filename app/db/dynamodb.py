@@ -4,12 +4,23 @@ DynamoDB database operations
 import os
 import boto3
 import uuid
+import logging
 from datetime import datetime
 from decimal import Decimal
 from typing import Dict, List, Optional, Any, Union
 from boto3.dynamodb.conditions import Key, Attr
 
 from app.core.config import settings
+
+# Reduce AWS SDK logging verbosity
+logging.getLogger('boto3').setLevel(logging.WARNING)
+logging.getLogger('botocore').setLevel(logging.WARNING)
+logging.getLogger('urllib3').setLevel(logging.WARNING)
+logging.getLogger('s3transfer').setLevel(logging.WARNING)
+
+# Setup DynamoDB service logger
+logger = logging.getLogger(__name__)
+logger.setLevel(logging.INFO)  # Only show INFO and above for DynamoDB operations
 
 # Table names
 USERS_TABLE = settings.USERS_TABLE_NAME
@@ -18,12 +29,14 @@ RAW_EXTRACTIONS_TABLE = settings.RAW_EXTRACTIONS_TABLE_NAME
 PAYMENTS_TABLE = settings.PAYMENTS_TABLE_NAME
 USER_CREDENTIALS_TABLE = settings.USER_CREDENTIALS_TABLE_NAME
 API_KEYS_TABLE = settings.API_KEYS_TABLE_NAME
+PRICING_ACTIONS_TABLE = settings.PRICING_ACTIONS_TABLE_NAME
 
 class DynamoDBService:
     """DynamoDB service for database operations"""
 
     def __init__(self):
         """Initialize DynamoDB service"""
+        logger.info("Initializing DynamoDB service")
         # Initialize DynamoDB client
         kwargs = {}
         if settings.DYNAMODB_ENDPOINT_URL:
@@ -36,6 +49,7 @@ class DynamoDBService:
             aws_secret_access_key=settings.AWS_SECRET_ACCESS_KEY,
             **kwargs
         )
+        logger.info("DynamoDB service initialized successfully")
         
     def _execute_put_item(self, table_name: str, item: Dict[str, Any]) -> Dict[str, Any]:
         """Execute a PutItem operation on DynamoDB
@@ -62,6 +76,7 @@ class DynamoDBService:
         
         table = self.dynamodb.Table(table_name)
         table.put_item(Item=processed_item)
+        logger.debug(f"Put item in {table_name}: {item.get('id', 'unknown_id')}")
         return item
     
     def _execute_get_item(self, table_name: str, key: Dict[str, Any]) -> Optional[Dict[str, Any]]:
@@ -708,6 +723,95 @@ class DynamoDBService:
             },
             ExpressionAttributeValues={':status': 'inactive'}
         )
+
+    # Pricing Actions operations
+    def create_pricing_action(self, action_data: Dict[str, Any]) -> Dict[str, Any]:
+        """Create a new pricing action record
+        
+        Args:
+            action_data: Dictionary containing pricing action data
+            
+        Returns:
+            The created pricing action item
+        """
+        action_id = str(uuid.uuid4())
+        timestamp = datetime.now().isoformat()
+        
+        action_item = {
+            'id': action_id,
+            'user_id': action_data['user_id'],
+            'user_email': action_data['user_email'],
+            'pricing_tier': action_data['pricing_tier'],
+            'price': Decimal(str(action_data['price'])),
+            'timestamp': timestamp,
+            'user_name': action_data.get('user_name', ''),
+            'user_subscription_tier': action_data.get('user_subscription_tier', 'FREE'),
+            'ip_address': action_data.get('ip_address', ''),
+            'user_agent': action_data.get('user_agent', '')
+        }
+        
+        return self._execute_put_item(PRICING_ACTIONS_TABLE, action_item)
+
+    def get_pricing_actions_by_user(self, user_id: str) -> List[Dict[str, Any]]:
+        """Get all pricing actions for a user
+        
+        Args:
+            user_id: User ID
+            
+        Returns:
+            List of pricing actions for the user
+        """
+        table = self.dynamodb.Table(PRICING_ACTIONS_TABLE)
+        response = table.query(
+            IndexName='user-id-index',
+            KeyConditionExpression=Key('user_id').eq(user_id),
+            ScanIndexForward=False  # Sort by timestamp descending
+        )
+        return response.get('Items', [])
+
+    def get_all_pricing_actions(self, limit: int = 100) -> List[Dict[str, Any]]:
+        """Get all pricing actions across all users
+        
+        Args:
+            limit: Maximum number of actions to return
+            
+        Returns:
+            List of pricing actions sorted by timestamp descending
+        """
+        table = self.dynamodb.Table(PRICING_ACTIONS_TABLE)
+        response = table.scan(Limit=limit)
+        
+        # Sort by timestamp descending
+        items = response.get('Items', [])
+        items.sort(key=lambda x: x.get('timestamp', ''), reverse=True)
+        
+        return items
+
+    def get_pricing_actions_stats(self) -> Dict[str, Any]:
+        """Get pricing actions statistics
+        
+        Returns:
+            Dictionary containing stats about pricing actions
+        """
+        table = self.dynamodb.Table(PRICING_ACTIONS_TABLE)
+        response = table.scan()
+        items = response.get('Items', [])
+        
+        total_actions = len(items)
+        tier_counts = {}
+        unique_users = set()
+        
+        for item in items:
+            tier = item.get('pricing_tier', 'unknown')
+            tier_counts[tier] = tier_counts.get(tier, 0) + 1
+            unique_users.add(item.get('user_id'))
+        
+        return {
+            'total_actions': total_actions,
+            'unique_users_count': len(unique_users),
+            'tier_counts': tier_counts,
+            'most_clicked_tier': max(tier_counts, key=tier_counts.get) if tier_counts else None
+        }
 
 # Create a singleton instance
 dynamodb_service = DynamoDBService()

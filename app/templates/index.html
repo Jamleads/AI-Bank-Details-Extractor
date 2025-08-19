@@ -51,26 +51,45 @@
     /* Ad banner styles */
     .ad-banner {
         margin: 20px 0;
-        padding: 15px;
+        padding: 0;
         background-color: #f8f9fa;
         border-radius: 8px;
         border: 1px solid #e9ecef;
-        display: flex;
-        align-items: center;
+        overflow: hidden;
         box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+        transition: transform 0.2s ease;
+        /* Optimal for banner images with 7:1 aspect ratio (e.g., 800x120px) */
+    }
+
+    .ad-banner:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
     }
 
     .ad-banner-image {
-        max-width: 200px;
-        max-height: 100px;
-        margin-right: 15px;
-        border-radius: 4px;
+        width: 100%;
+        height: auto;
+        max-height: 120px;
+        /* Matches recommended image height */
+        min-height: 60px;
+        /* Prevents very short banners */
+        object-fit: cover;
+        display: block;
     }
 
-    .ad-banner-text {
-        flex: 1;
-        font-size: 14px;
-        color: #495057;
+    /* Responsive adjustments for smaller screens */
+    @media (max-width: 768px) {
+        .ad-banner-image {
+            max-height: 100px;
+            min-height: 50px;
+        }
+    }
+
+    @media (max-width: 480px) {
+        .ad-banner-image {
+            max-height: 80px;
+            min-height: 40px;
+        }
     }
 </style>
 {% endblock %}
@@ -89,8 +108,13 @@
 
         <!-- Advertisement Banner -->
         <div class="ad-banner" id="ad-banner" style="display: none;">
-            <img src="" alt="Advertisement" class="ad-banner-image" id="ad-banner-image">
-            <div class="ad-banner-text" id="ad-banner-text"></div>
+            <a href="#" id="ad-banner-link" target="_blank" style="display: block; width: 100%; text-decoration: none;">
+                <img src="" alt="Advertisement" class="ad-banner-image" id="ad-banner-image">
+            </a>
+        </div>
+        <!-- Optional text below banner -->
+        <div class="ad-banner-text" id="ad-banner-text"
+            style="display: none; margin-top: 10px; text-align: center; font-size: 14px; color: #495057;">
         </div>
     </div>
 
@@ -125,6 +149,7 @@
             <div class="upload-controls">
                 <button type="button" id="processBtn" class="btn btn-primary" disabled>Process Files</button>
                 <button type="button" id="clear-button" class="btn btn-secondary" disabled>Clear All Data</button>
+                <button type="button" id="refreshBtn" class="btn btn-secondary">Refresh Results</button>
             </div>
         </form>
     </div>
@@ -143,18 +168,8 @@
 
             <div class="results-table-container" id="resultsTableContainer" style="display: none;">
                 <table class="results-table" id="resultsTable">
-                    <thead>
-                        <tr>
-                            <th>File</th>
-                            <th>Bank Name</th>
-                            <th>Account Name</th>
-                            <th>Account Number</th>
-                            <th>Sort Code</th>
-                            <th>IBAN</th>
-                            <th>SWIFT/BIC</th>
-                            <th>Routing Number</th>
-                            <th>BSB Code</th>
-                        </tr>
+                    <thead id="resultsTableHead">
+                        <!-- Dynamic headers will be populated here -->
                     </thead>
                     <tbody id="resultsTableBody">
                         <!-- Results will be populated here -->
@@ -196,7 +211,7 @@
 {% endblock %}
 
 {% block extra_js %}
-<script src="{{ url_for('static', path='js/main.js') }}"></script>
+<script src="/static/js/main.js"></script>
 <script>
     // Check for auth token in meta tag
     document.addEventListener('DOMContentLoaded', function () {
@@ -216,6 +231,7 @@
     // Function to load the latest advertisement
     function loadLatestAd() {
         const authToken = localStorage.getItem('auth_token');
+        console.log('Loading latest ad, auth token:', authToken ? 'Present' : 'Missing');
         if (!authToken) return;
 
         fetch('/api/ads/latest', {
@@ -224,8 +240,11 @@
             }
         })
             .then(response => {
+                console.log('Ad API response status:', response.status);
                 if (!response.ok) {
-                    if (response.status !== 404) {
+                    if (response.status === 404) {
+                        console.log('No advertisements available (404)');
+                    } else {
                         console.error('Error loading advertisement:', response.status);
                     }
                     return null;
@@ -233,14 +252,33 @@
                 return response.json();
             })
             .then(ad => {
+                console.log('Ad data received:', ad);
                 if (ad) {
                     const adBanner = document.getElementById('ad-banner');
+                    const adBannerLink = document.getElementById('ad-banner-link');
                     const adImage = document.getElementById('ad-banner-image');
                     const adText = document.getElementById('ad-banner-text');
 
+                    // Set up the clickable banner
+                    adBannerLink.href = ad.link;
                     adImage.src = ad.url;
-                    adText.textContent = ad.ad_text;
-                    adBanner.style.display = 'flex';
+                    adImage.alt = "Advertisement";
+                    console.log('Setting ad image src to:', ad.url);
+
+                    // Show the banner
+                    adBanner.style.display = 'block';
+
+                    // Show optional text below banner if available
+                    if (ad.ad_text && ad.ad_text.trim() !== '') {
+                        adText.textContent = ad.ad_text;
+                        adText.style.display = 'block';
+                        console.log('Showing ad text:', ad.ad_text);
+                    } else {
+                        adText.style.display = 'none';
+                        console.log('No ad text to display');
+                    }
+                } else {
+                    console.log('No ad data received');
                 }
             })
             .catch(error => {
@@ -411,8 +449,7 @@
                 const fileIcon = file.type === 'application/pdf' || fileExtension === '.pdf' ? 'fa-file-pdf' :
                     file.type === 'image/png' || fileExtension === '.png' ? 'fa-file-image' :
                         file.type === 'image/jpeg' || fileExtension === '.jpg' || fileExtension === '.jpeg' ? 'fa-file-image' :
-                            file.type === 'image/webp' || fileExtension === '.webp' ? 'fa-file-image' :
-                                file.type === 'application/zip' || fileExtension === '.zip' ? 'fa-file-archive' : 'fa-file';
+                            file.type === 'image/webp' || fileExtension === '.webp' ? 'fa-file-image' : 'fa-file';
 
                 const fileName = document.createElement('div');
                 fileName.className = 'file-name';
@@ -662,13 +699,17 @@
             // Don't disable clear button as it should be available to clear previous results
         }
 
+        let currentHeaderConfig = null; // Store the current header configuration
+
         function displayResults(data) {
             const resultsPlaceholder = document.getElementById('resultsPlaceholder');
             const resultsTableContainer = document.getElementById('resultsTableContainer');
+            const resultsTableHead = document.getElementById('resultsTableHead');
             const resultsTableBody = document.getElementById('resultsTableBody');
             const exportSection = document.getElementById('exportSection');
 
             // Clear previous results
+            resultsTableHead.innerHTML = '';
             resultsTableBody.innerHTML = '';
 
             if (!data || data.length === 0) {
@@ -678,22 +719,67 @@
                 return;
             }
 
-            // Add rows for each result
+            // Define field display names (can be overridden by custom headers)
+            // Get field names to use (custom headers if available, otherwise generate from field name)
+            function getFieldDisplayName(field) {
+                if (currentHeaderConfig && currentHeaderConfig.header_mappings && currentHeaderConfig.header_mappings[field]) {
+                    return currentHeaderConfig.header_mappings[field];
+                }
+                // Convert field name to readable format (snake_case to Title Case)
+                return field.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
+            }
+
+            // Analyze data to find which fields have values
+            const fieldsWithData = new Set();
             data.forEach(item => {
-                const row = document.createElement('tr');
-                row.innerHTML = `
-                    <td>${item.source_pdf || '-'}</td>
-                    <td>${item.bank_name || '-'}</td>
-                    <td>${item.account_name || '-'}</td>
-                    <td>${item.account_number || '-'}</td>
-                    <td>${item.sort_code || '-'}</td>
-                    <td>${item.iban || '-'}</td>
-                    <td>${item.swift_code || '-'}</td>
-                    <td>${item.routing_number || '-'}</td>
-                    <td>${item.bsb_code || '-'}</td>
-                `;
-                resultsTableBody.appendChild(row);
+                Object.keys(item).forEach(key => {
+                    const value = item[key];
+                    // Less strict filtering - only exclude truly empty values
+                    if (value !== null && value !== undefined && value !== '') {
+                        fieldsWithData.add(key);
+                    }
+                });
             });
+
+            // Convert to array and sort alphabetically for consistent display
+            const sortedFields = Array.from(fieldsWithData).sort();
+
+            // Create dynamic table headers
+            if (sortedFields.length > 0) {
+                const headerRow = document.createElement('tr');
+                sortedFields.forEach(field => {
+                    const th = document.createElement('th');
+                    th.textContent = getFieldDisplayName(field);
+                    th.setAttribute('data-field', field); // Store field name for reference
+                    headerRow.appendChild(th);
+                });
+                resultsTableHead.appendChild(headerRow);
+
+                // Add rows for each result
+                data.forEach(item => {
+                    const row = document.createElement('tr');
+                    sortedFields.forEach(field => {
+                        const td = document.createElement('td');
+                        const value = item[field];
+
+                        // Format the value appropriately
+                        if (value === null || value === undefined || value === '') {
+                            td.textContent = '-';
+                            td.className = 'empty-value';
+                        } else if (field === 'other_details' && typeof value === 'object') {
+                            // Handle JSON objects in other_details
+                            td.textContent = JSON.stringify(value, null, 2);
+                            td.className = 'json-data';
+                        } else {
+                            // Display the actual value
+                            td.textContent = String(value);
+                        }
+
+                        row.appendChild(td);
+                    });
+                    resultsTableBody.appendChild(row);
+                });
+            }
 
             // Show results and export options
             resultsPlaceholder.style.display = 'none';
@@ -706,7 +792,7 @@
 
         function loadHeaderConfigurations() {
             // Load header configurations from API
-            fetch('/api/header-config', {
+            fetch('/api/header-config/', {
                 headers: {
                     'Authorization': `Bearer ${authToken}`
                 }
@@ -718,6 +804,14 @@
                     return response.json();
                 })
                 .then(configs => {
+                    // Find and store the default header configuration
+                    const defaultConfig = configs.find(config => config.is_default);
+                    if (defaultConfig) {
+                        currentHeaderConfig = defaultConfig;
+                        // Refresh the table display with the custom headers
+                        refreshTableHeaders();
+                    }
+
                     // Update export dropdown
                     const exportDropdown = document.getElementById('header-config-dropdown');
                     // Clear existing options except the default
@@ -756,6 +850,25 @@
                 .catch(error => {
                     console.error('Error loading header configurations:', error);
                 });
+        }
+
+        // Function to refresh table headers when header configuration changes
+        function refreshTableHeaders() {
+            const resultsTableHead = document.getElementById('resultsTableHead');
+            if (!resultsTableHead || resultsTableHead.children.length === 0) return;
+
+            const headerRow = resultsTableHead.querySelector('tr');
+            if (!headerRow) return;
+
+            // Update header text based on current configuration
+            headerRow.querySelectorAll('th').forEach(th => {
+                const field = th.getAttribute('data-field');
+                if (field) {
+                    if (currentHeaderConfig && currentHeaderConfig.header_mappings && currentHeaderConfig.header_mappings[field]) {
+                        th.textContent = currentHeaderConfig.header_mappings[field];
+                    }
+                }
+            });
         }
 
         function hideResults() {

@@ -29,7 +29,10 @@ class DatabaseAdapter:
         if self.db_type == "sqlite":
             from app.db.database import get_db
             self._db_provider = get_db
-        else:
+        elif self.db_type == "firestore":
+            from app.db.firestore import firestore_service
+            self._db_provider = firestore_service
+        else:  # default to dynamodb
             from app.db.dynamodb import dynamodb_service
             self._db_provider = dynamodb_service
 
@@ -239,14 +242,14 @@ class DatabaseAdapter:
                 user_id = str(user_id)
             return dynamodb_service.get_user_credentials(user_id, credential_type)
         else:
-            # Convert user_id to string for DynamoDB
+            # Convert user_id to string for DynamoDB/Firestore
             if isinstance(user_id, int):
                 user_id = str(user_id)
             return self._db_provider.get_user_credentials(user_id, credential_type)
 
     def delete_user_credentials(self, user_id: Union[int, str], credential_type: str):
         """Delete user credentials"""
-        # Convert user_id to string for DynamoDB
+        # Convert user_id to string for DynamoDB/Firestore
         if isinstance(user_id, int):
             user_id = str(user_id)
         return self._db_provider.delete_user_credentials(user_id, credential_type)
@@ -271,6 +274,23 @@ class DatabaseAdapter:
     def set_inactive_on_user_id(self, user_id: str):
         """Set all API keys for a user to inactive"""
         return self._db_provider.set_inactive_on_user_id(user_id)
+
+    # Pricing Actions operations
+    def create_pricing_action(self, action_data: Dict[str, Any]) -> Dict[str, Any]:
+        """Create a new pricing action record"""
+        return self._db_provider.create_pricing_action(action_data)
+
+    def get_pricing_actions_by_user(self, user_id: str) -> List[Dict[str, Any]]:
+        """Get all pricing actions for a user"""
+        return self._db_provider.get_pricing_actions_by_user(user_id)
+
+    def get_all_pricing_actions(self, limit: int = 100) -> List[Dict[str, Any]]:
+        """Get all pricing actions across all users"""
+        return self._db_provider.get_all_pricing_actions(limit)
+
+    def get_pricing_actions_stats(self) -> Dict[str, Any]:
+        """Get pricing actions statistics"""
+        return self._db_provider.get_pricing_actions_stats()
 
 # Create a singleton instance
 db = DatabaseAdapter()

@@ -13,13 +13,14 @@ from app.utils.auth import get_current_user_required
 from app.core.admin_config import is_admin_email
 from app.db.models import User, BankRecord, RawExtraction
 from app.db.adapter import db as db_adapter
+from app.db import pricing_actions as pricing_actions_crud
 
 # Setup logging
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.DEBUG)
 
 # Create router
-router = APIRouter(prefix="/admin", tags=["admin"], include_in_schema=False)
+router = APIRouter(prefix="/api/admin", tags=["admin"], include_in_schema=False)
 
 
 async def get_admin_user_required(
@@ -34,7 +35,7 @@ async def get_admin_user_required(
     Returns:
         Current user if they are an admin
     """
-    if not current_user.email or not is_admin_email(current_user.email):
+    if not current_user["email"] or not is_admin_email(current_user["email"]):
         raise HTTPException(status_code=403, detail="Admin access required")
     return current_user
 
@@ -144,3 +145,51 @@ async def disable_user(
     except Exception as e:
         logger.error(f"Error disabling user {user_id}: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Failed to disable user: {str(e)}")
+
+
+@router.get("/pricing-actions")
+async def get_pricing_actions(
+    limit: int = 100,
+    db: AsyncSession = Depends(get_async_db),
+    current_user: UserDB = Depends(get_admin_user_required)
+):
+    """
+    Get all pricing actions for admin review
+    
+    Args:
+        limit: Maximum number of actions to return
+        db: Database session
+        current_user: Current admin user
+        
+    Returns:
+        List of pricing actions with user details
+    """
+    try:
+        actions = await pricing_actions_crud.get_all_pricing_actions(db, limit)
+        return {"pricing_actions": actions}
+    except Exception as e:
+        logger.error(f"Error getting pricing actions: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to get pricing actions: {str(e)}")
+
+
+@router.get("/pricing-actions/stats")
+async def get_pricing_actions_stats(
+    db: AsyncSession = Depends(get_async_db),
+    current_user: UserDB = Depends(get_admin_user_required)
+):
+    """
+    Get pricing actions statistics
+    
+    Args:
+        db: Database session
+        current_user: Current admin user
+        
+    Returns:
+        Statistics about pricing actions
+    """
+    try:
+        stats = await pricing_actions_crud.get_pricing_actions_stats(db)
+        return stats
+    except Exception as e:
+        logger.error(f"Error getting pricing actions stats: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to get pricing actions stats: {str(e)}")

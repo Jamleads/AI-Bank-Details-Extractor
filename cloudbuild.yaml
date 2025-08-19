@@ -1,0 +1,117 @@
+# Cloud Build configuration for AI Bank Details Extractor
+# This file enables automated deployments when code is pushed to the repository
+
+steps:
+  # Step 1: Build the Docker image
+  - name: 'gcr.io/cloud-builders/docker'
+    id: 'build-image'
+    args:
+      - 'build'
+      - '-t'
+      - '${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_REPOSITORY}/ai-bank-extractor:${COMMIT_SHA}'
+      - '-t'
+      - '${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_REPOSITORY}/ai-bank-extractor:latest'
+      - '.'
+    timeout: '600s'
+
+  # Step 2: Push the Docker image to Artifact Registry
+  - name: 'gcr.io/cloud-builders/docker'
+    id: 'push-image'
+    args:
+      - 'push'
+      - '--all-tags'
+      - '${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_REPOSITORY}/ai-bank-extractor'
+    timeout: '300s'
+
+  # Step 3: Deploy to Cloud Run
+  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+    id: 'deploy-service'
+    entrypoint: 'gcloud'
+    args:
+      - 'run'
+      - 'deploy'
+      - 'ai-bank-extractor'
+      - '--image=${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_REPOSITORY}/ai-bank-extractor:${COMMIT_SHA}'
+      - '--region=${_REGION}'
+      - '--platform=managed'
+      - '--service-account=${_SERVICE_ACCOUNT}'
+      - '--set-env-vars=CLOUD=GCP,DATABASE_TYPE=firestore,USE_GCS_STORAGE=true,USE_GCP_SECRETS=true,GCP_PROJECT_ID=${PROJECT_ID},GCS_BUCKET=${_GCS_BUCKET},GCP_SECRETS_NAME=${_SECRET_NAME},HOST=0.0.0.0,PORT=8080,PRODUCTION=true'
+      - '--memory=4Gi'
+      - '--cpu=2'
+      - '--timeout=900'
+      - '--max-instances=100'
+      - '--min-instances=0'
+      - '--allow-unauthenticated'
+    timeout: '600s'
+
+  # Step 4: Run post-deployment health check
+  - name: 'gcr.io/cloud-builders/curl'
+    id: 'health-check'
+    entrypoint: 'bash'
+    args:
+      - '-c'
+      - |
+        # Wait for service to be ready
+        sleep 30
+        
+        # Get the service URL
+        SERVICE_URL=$$(gcloud run services describe ai-bank-extractor --region=${_REGION} --format='value(status.url)')
+        echo "Service URL: $$SERVICE_URL"
+        
+        # Test health endpoint
+        if curl -f "$$SERVICE_URL/health" --max-time 30; then
+          echo "✅ Health check passed"
+        else
+          echo "⚠️ Health check failed - service may still be starting"
+          exit 1
+        fi
+        
+        # Test main endpoint
+        if curl -f "$$SERVICE_URL/" --max-time 30; then
+          echo "✅ Main endpoint accessible"
+        else
+          echo "⚠️ Main endpoint not accessible"
+          exit 1
+        fi
+        
+        echo "🎉 Deployment successful!"
+    timeout: '300s'
+
+# Substitutions (variables)
+substitutions:
+  _REGION: 'us-central1'
+  _REPOSITORY: 'ai-bank-extractor-images'
+  _SERVICE_ACCOUNT: 'ai-bank-extractor-sa@${PROJECT_ID}.iam.gserviceaccount.com'
+  _GCS_BUCKET: '${PROJECT_ID}-ai-bank-extractor-storage'
+  _SECRET_NAME: 'ai-bank-extractor-secrets'
+
+# Options
+options:
+  # Use high-performance build machines
+  machineType: 'E2_HIGHCPU_8'
+  
+  # Logging configuration
+  logging: CLOUD_LOGGING_ONLY
+  
+  # Set build timeout
+  timeout: '1800s'  # 30 minutes
+  
+  # Environment variables for the build
+  env:
+    - 'PROJECT_ID=${PROJECT_ID}'
+    - 'COMMIT_SHA=${COMMIT_SHA}'
+    - 'BUILD_ID=${BUILD_ID}'
+
+# IAM permissions required for the Cloud Build service account:
+# - Cloud Run Admin
+# - Storage Admin  
+# - Service Account User
+# - Artifact Registry Writer
+# - Logs Writer
+
+# To trigger builds automatically, connect your repository:
+# gcloud builds triggers create github \
+#   --repo-name=AI-Bank-Details-Extractor \
+#   --repo-owner=YOUR_GITHUB_USERNAME \
+#   --branch-pattern="^main$" \
+#   --build-config=cloudbuild.yaml

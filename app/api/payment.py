@@ -103,7 +103,7 @@ async def initiate_payment(
         print(f"Creating Yativo customer for user: {get_user_id(current_user)}")
         customer_data = await yativo_service.create_customer(
             user_id=str(get_user_id(current_user)),
-            email=current_user.email,
+            email=current_user["email"],
             name=current_user.name
         )
         customer_id = customer_data.get("id")
